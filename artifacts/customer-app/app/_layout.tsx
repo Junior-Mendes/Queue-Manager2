@@ -37,6 +37,7 @@ function RootLayoutNav() {
       <Stack.Screen name="join-queue" options={{ title: "Join Queue", headerShown: false }} />
       <Stack.Screen name="book" options={{ title: "Book", headerShown: false }} />
       <Stack.Screen name="track" options={{ title: "My Status", headerShown: false }} />
+      <Stack.Screen name="scan" options={{ title: "Scan QR", headerShown: false, presentation: "fullScreenModal" }} />
     </Stack>
   );
 }

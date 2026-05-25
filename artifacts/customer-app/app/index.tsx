@@ -80,6 +80,26 @@ export default function WelcomeScreen() {
             />
           </View>
 
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
+
+          <Pressable
+            onPress={() => {
+              Haptics.selectionAsync();
+              router.push("/scan");
+            }}
+            style={({ pressed }) => [
+              styles.scanBtn,
+              { borderColor: colors.border, backgroundColor: pressed ? colors.secondary : colors.card },
+            ]}
+          >
+            <Feather name="camera" size={20} color={colors.primary} />
+            <Text style={[styles.scanBtnText, { color: colors.foreground }]}>Scan QR Code</Text>
+          </Pressable>
+
           {submitted && isLoading && (
             <Text style={[styles.status, { color: colors.mutedForeground }]}>
               Searching...
@@ -115,6 +135,19 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontFamily: "Inter_700Bold", textAlign: "center", marginBottom: 8 },
   subtitle: { fontSize: 15, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 22, marginBottom: 32 },
   form: { gap: 12 },
+  dividerRow: { flexDirection: "row", alignItems: "center", marginVertical: 20, gap: 12 },
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  scanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  scanBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   status: { marginTop: 16, textAlign: "center", fontFamily: "Inter_500Medium" },
   errorWrap: { marginTop: 16, alignItems: "center" },
   errorText: { fontSize: 14, fontFamily: "Inter_500Medium", textAlign: "center" },
