@@ -34,8 +34,8 @@ const statusLabel: Record<string, string> = {
 
 export default function AppointmentsPage() {
   const [selectedBusinessId, setSelectedBusinessId] = useState<string>("");
-  const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [selectedProfessionalId, setSelectedProfessionalId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const { toast } = useToast();
 
   const today = new Date().toISOString().split("T")[0];
@@ -53,8 +53,8 @@ export default function AppointmentsPage() {
     ? {
         businessId: selectedBusinessId,
         date: today,
-        professionalId: selectedProfessionalId || undefined,
-        status: statusFilter || undefined,
+        professionalId: selectedProfessionalId ?? undefined,
+        status: statusFilter ?? undefined,
       }
     : { businessId: "", date: today };
   const { data: appointments, isLoading } = useListAppointments(
@@ -94,23 +94,30 @@ export default function AppointmentsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={selectedProfessionalId} onValueChange={setSelectedProfessionalId} disabled={!selectedBusinessId}>
+          <Select
+            value={selectedProfessionalId ?? "all"}
+            onValueChange={(v) => setSelectedProfessionalId(v === "all" ? null : v)}
+            disabled={!selectedBusinessId}
+          >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Any professional" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Professionals</SelectItem>
+              <SelectItem value="all">All Professionals</SelectItem>
               {professionals?.map((p) => (
                 <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select
+            value={statusFilter ?? "all"}
+            onValueChange={(v) => setStatusFilter(v === "all" ? null : v)}
+          >
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All</SelectItem>
+              <SelectItem value="all">All</SelectItem>
               <SelectItem value="scheduled">Scheduled</SelectItem>
               <SelectItem value="confirmed">Confirmed</SelectItem>
               <SelectItem value="in_service">In Service</SelectItem>
