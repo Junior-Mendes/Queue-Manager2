@@ -1,12 +1,12 @@
-import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { useState, useEffect } from "react";
+import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ClerkProvider, Show, SignIn, useAuth } from "@clerk/react";
-import { useEffect } from "react";
-import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 
 import { Layout } from "@/components/layout";
+import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import TenantsPage from "@/pages/tenants";
 import TenantDetailPage from "@/pages/tenant-detail";
@@ -19,85 +19,86 @@ const queryClient = new QueryClient({
   },
 });
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
-function ApiAuthSetup() {
-  const { getToken } = useAuth();
-  useEffect(() => {
-    setAuthTokenGetter(() => getToken());
-    return () => setAuthTokenGetter(null);
-  }, [getToken]);
+// Configure API client base URL so /api hits the correct server
+setBaseUrl(API_BASE);
+
+type User = { id: string; email: string; name: string; role: string };
+
+function getStoredUser(): { user: User; token: string } | null {
+  try {
+    const raw = localStorage.getItem("saas_admin_user");
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data?.token && data?.user?.role === "super_admin") return data;
+  } catch { /* ignore */ }
   return null;
 }
 
-function SignInRoute() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-muted/40 p-4">
-      <SignIn routing="hash" fallbackRedirectUrl={basePath + "/dashboard"} />
-    </div>
-  );
-}
-
-function AuthenticatedRouter() {
-  return (
-    <>
-      <ApiAuthSetup />
-      <Layout>
-        <Switch>
-          <Route path="/" component={Dashboard} />
-          <Route path="/dashboard" component={Dashboard} />
-          <Route path="/tenants" component={TenantsPage} />
-          <Route path="/tenants/:id">
-            {(params) => <TenantDetailPage tenantId={params.id} />}
-          </Route>
-          <Route path="/plans" component={PlansPage} />
-          <Route component={NotFound} />
-        </Switch>
-      </Layout>
-    </>
-  );
-}
-
-function GuestRouter() {
-  return (
-    <Switch>
-      <Route path="/sign-in/*?" component={SignInRoute} />
-      <Route path="/" component={SignInRoute} />
-      <Route component={SignInRoute} />
-    </Switch>
-  );
+function ApiAuthSetup({ token }: { token: string }) {
+  useEffect(() => {
+    setAuthTokenGetter(() => token);
+    return () => setAuthTokenGetter(null);
+  }, [token]);
+  return null;
 }
 
 function App() {
-  if (!clerkPubKey) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center p-4">
-        <div className="max-w-md text-center">
-          <h1 className="text-xl font-bold mb-2">Missing Clerk Publishable Key</h1>
-          <p className="text-muted-foreground">The Clerk publishable key is not configured. Please check your environment variables.</p>
-        </div>
-      </div>
-    );
-  }
+  const stored = getStoredUser();
+  const [session, setSession] = useState<{ user: User; token: string } | null>(stored);
 
-  return (
-    <ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl}>
+  const handleLogin = (user: User, token: string) => {
+    localStorage.setItem("saas_admin_user", JSON.stringify({ user, token }));
+    setSession({ user, token });
+    // Also pre-configure the query client to use the new token
+    setAuthTokenGetter(() => token);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("saas_admin_user");
+    setAuthTokenGetter(null);
+    setSession(null);
+  };
+
+  if (!session) {
+    return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <WouterRouter base={basePath}>
-            <Show when="signed-in">
-              <AuthenticatedRouter />
-            </Show>
-            <Show when="signed-out">
-              <GuestRouter />
-            </Show>
+            <Switch>
+              <Route path="/" component={() => <LoginPage onLogin={handleLogin} />} />
+              <Route component={() => <LoginPage onLogin={handleLogin} />} />
+            </Switch>
           </WouterRouter>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
-    </ClerkProvider>
+    );
+  }
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <WouterRouter base={basePath}>
+          <ApiAuthSetup token={session.token} />
+          <Layout user={session.user} onLogout={handleLogout}>
+            <Switch>
+              <Route path="/" component={Dashboard} />
+              <Route path="/dashboard" component={Dashboard} />
+              <Route path="/tenants" component={TenantsPage} />
+              <Route path="/tenants/:id">
+                {(params) => <TenantDetailPage tenantId={params.id} />}
+              </Route>
+              <Route path="/plans" component={PlansPage} />
+              <Route component={NotFound} />
+            </Switch>
+          </Layout>
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 

@@ -1,6 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { UserButton, useUser } from "@clerk/react";
-import { LayoutDashboard, Building2, FileText, Shield, Menu } from "lucide-react";
+import { LayoutDashboard, Building2, FileText, Shield, Menu, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -10,9 +9,14 @@ const nav = [
   { name: "Plans", href: "/plans", icon: FileText },
 ];
 
-export function Layout({ children }: { children: React.ReactNode }) {
+interface LayoutProps {
+  children: React.ReactNode;
+  user: { id: string; email: string; name: string; role: string };
+  onLogout: () => void;
+}
+
+export function Layout({ children, user, onLogout }: LayoutProps) {
   const [location] = useLocation();
-  const { user } = useUser();
 
   const NavLinks = () => (
     <>
@@ -49,11 +53,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <aside className="fixed inset-y-0 left-0 z-10 hidden w-64 flex-col border-r bg-sidebar sm:flex">
         <NavLinks />
         <div className="mt-auto border-t border-sidebar-border p-4 flex items-center gap-3">
-          <UserButton />
-          <div className="flex flex-col overflow-hidden">
-            <span className="text-sm font-medium text-sidebar-foreground truncate">{user?.fullName || "User"}</span>
-            <span className="text-xs text-sidebar-foreground/60 truncate">{user?.primaryEmailAddress?.emailAddress}</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary/20">
+            <User className="h-4 w-4 text-sidebar-primary" />
           </div>
+          <div className="flex flex-col overflow-hidden flex-1">
+            <span className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</span>
+            <span className="text-xs text-sidebar-foreground/60 truncate">{user.email}</span>
+          </div>
+          <Button size="icon" variant="ghost" className="shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground" onClick={onLogout} title="Sair">
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </aside>
 
@@ -70,12 +79,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </SheetTrigger>
             <SheetContent side="left" className="w-64 p-0 bg-sidebar">
               <NavLinks />
+              <div className="mt-auto border-t border-sidebar-border p-4 flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary/20">
+                  <User className="h-4 w-4 text-sidebar-primary" />
+                </div>
+                <div className="flex flex-col overflow-hidden flex-1">
+                  <span className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</span>
+                  <span className="text-xs text-sidebar-foreground/60 truncate">{user.email}</span>
+                </div>
+                <Button size="icon" variant="ghost" className="shrink-0" onClick={onLogout}>
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </SheetContent>
           </Sheet>
           <span className="text-lg font-bold">SaaS Admin</span>
-          <div className="ml-auto">
-            <UserButton />
-          </div>
         </header>
 
         {/* Page content */}

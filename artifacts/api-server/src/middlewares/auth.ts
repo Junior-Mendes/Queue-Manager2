@@ -1,8 +1,11 @@
 import { getAuth, createClerkClient } from "@clerk/express";
 import type { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { tenantsTable, professionalsTable } from "@workspace/db";
+import { tenantsTable, professionalsTable, adminsTable, tenantUsersTable } from "@workspace/db";
+
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-in-production";
 
 // Request augmentation
 declare global {
@@ -12,18 +15,47 @@ declare global {
       role?: "super_admin" | "tenant_admin" | "operator" | null;
       tenantId?: string | null;
       businessId?: string | null;
+      authType?: "clerk" | "local";
     }
   }
 }
 
-function requireAuth(req: Request, res: Response, next: NextFunction): void | Response {
-  const auth = getAuth(req);
-  const userId = auth?.userId;
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
+// ── Unified auth: accepts Clerk session OR local JWT ─────────────────────────
+
+async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
+  // 1. Try Clerk first (session cookie or __session header)
+  const clerkAuth = getAuth(req);
+  if (clerkAuth?.userId) {
+    req.userId = clerkAuth.userId;
+    req.authType = "clerk";
+    return next();
   }
-  req.userId = userId;
-  next();
+
+  // 2. Try local JWT (Bearer token)
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    try {
+      const payload = jwt.verify(token, JWT_SECRET) as any;
+      if (payload.type === "admin" && payload.sub) {
+        req.userId = payload.sub;
+        req.role = "super_admin";
+        req.authType = "local";
+        return next();
+      }
+      if (payload.type === "tenant" && payload.sub) {
+        req.userId = payload.sub;
+        req.tenantId = payload.tenantId;
+        req.role = payload.role as any;
+        req.authType = "local";
+        return next();
+      }
+    } catch {
+      // Invalid token — fall through
+    }
+  }
+
+  return res.status(401).json({ error: "Unauthorized" });
 }
 
 let _clerkBackend: ReturnType<typeof createClerkClient> | null = null;
@@ -37,13 +69,18 @@ function getClerkBackend() {
 async function loadUserContext(req: Request, _res: Response, next: NextFunction) {
   if (!req.userId) return next();
 
+  // Local auth: role/tenant already set in requireAuth
+  if (req.authType === "local") {
+    return next();
+  }
+
+  // Clerk auth: look up metadata
   const auth = getAuth(req);
   const metadata = (auth?.sessionClaims as any)?.metadata ?? {};
   let role = metadata?.role;
   let tenantId = metadata?.tenantId;
   let businessId = metadata?.businessId;
 
-  // When claims are empty (e.g. raw session token without metadata), query Clerk backend
   if (!role && !tenantId) {
     try {
       const clerk = getClerkBackend();
@@ -55,7 +92,7 @@ async function loadUserContext(req: Request, _res: Response, next: NextFunction)
         if (md?.businessId) businessId = md.businessId;
       }
     } catch {
-      // Clerk lookup failed — keep whatever we have and fall through
+      // ignore
     }
   }
 
@@ -77,11 +114,10 @@ async function loadUserContext(req: Request, _res: Response, next: NextFunction)
     return next();
   }
 
-  // Fallback: derive role and tenant from database lookups
+  // Fallback: derive from database (legacy Clerk users linked to tenants/professionals)
   const tenant = await db.query.tenantsTable.findFirst({
     where: eq(tenantsTable.ownerClerkId, req.userId),
   });
-
   if (tenant) {
     req.role = "tenant_admin";
     req.tenantId = tenant.id;
@@ -91,7 +127,6 @@ async function loadUserContext(req: Request, _res: Response, next: NextFunction)
   const prof = await db.query.professionalsTable.findFirst({
     where: eq(professionalsTable.clerkId, req.userId),
   });
-
   if (prof) {
     req.role = "operator";
     req.tenantId = prof.tenantId;

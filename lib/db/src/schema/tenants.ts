@@ -11,7 +11,7 @@ export const tenantsTable = pgTable("tenants", {
   slug: text("slug").notNull().unique(),
   planId: text("plan_id").references(() => plansTable.id),
   status: tenantStatusEnum("status").notNull().default("trial"),
-  ownerClerkId: text("owner_clerk_id").notNull(),
+  ownerClerkId: text("owner_clerk_id"), // Clerk ID (legacy) or local user ID
   email: text("email").notNull(),
   phone: text("phone"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
