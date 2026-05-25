@@ -10,6 +10,7 @@ export const tenantUsersTable = pgTable("tenant_users", {
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default("operator"), // tenant_admin | operator
+  mustChangePassword: timestamp("must_change_password").defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

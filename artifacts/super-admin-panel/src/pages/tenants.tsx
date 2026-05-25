@@ -56,6 +56,7 @@ export default function TenantsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [form, setForm] = useState<CreateTenantInput>(emptyTenant);
+  const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: tenants, isLoading } = useListTenants(
@@ -75,10 +76,13 @@ export default function TenantsPage() {
 
   const createTenant = useCreateTenant({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (data: any) => {
         queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey() });
         setIsCreateOpen(false);
         setForm(emptyTenant);
+        if (data?.tempPassword) {
+          setCreatedPassword(data.tempPassword);
+        }
       },
     },
   });
@@ -274,9 +278,49 @@ export default function TenantsPage() {
         </CardContent>
       </Card>
 
+      {/* Show generated password after creating tenant */}
+      {createdPassword && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 mb-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-amber-900">Tenant created successfully!</h3>
+              <p className="text-sm text-amber-800 mt-1">
+                An initial admin account was created. Share this temporary password with the tenant owner:
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <code className="rounded bg-white px-3 py-1.5 text-sm font-mono text-amber-900 border border-amber-200">
+                  {createdPassword}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdPassword);
+                  }}
+                >
+                  Copy
+                </Button>
+              </div>
+              <p className="text-xs text-amber-700 mt-2">
+                The user must change this password on their first login.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2 text-amber-800"
+                onClick={() => setCreatedPassword(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Dialog
         open={isCreateOpen}
-        onOpenChange={(open) => { setIsCreateOpen(open); if (!open) createTenant.reset(); }}
+        onOpenChange={(open) => { setIsCreateOpen(open); if (!open) { createTenant.reset(); setCreatedPassword(null); } }}
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

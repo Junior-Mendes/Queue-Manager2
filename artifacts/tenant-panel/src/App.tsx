@@ -7,6 +7,7 @@ import { setAuthTokenGetter } from "@workspace/api-client-react";
 
 import { Layout } from "./components/layout";
 import LoginPage from "./pages/login";
+import ChangePasswordPage from "./pages/change-password";
 import Dashboard from "./pages/dashboard";
 import Businesses from "./pages/businesses";
 import QueuePage from "./pages/queue";
@@ -22,7 +23,14 @@ const queryClient = new QueryClient({
   },
 });
 
-type User = { id: string; email: string; name: string; role: string; tenantId: string };
+type User = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  tenantId: string;
+  mustChangePassword?: boolean;
+};
 
 function getStoredUser(): { user: User; token: string } | null {
   try {
@@ -58,11 +66,30 @@ function App() {
     setSession(null);
   };
 
+  const handlePasswordChanged = () => {
+    if (!session) return;
+    const updatedUser = { ...session.user, mustChangePassword: false };
+    localStorage.setItem("saas_tenant_user", JSON.stringify({ user: updatedUser, token: session.token }));
+    setSession({ user: updatedUser, token: session.token });
+  };
+
   if (!session) {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <LoginPage onLogin={handleLogin} />
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  // Force password change on first login
+  if (session.user.mustChangePassword) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <ChangePasswordPage token={session.token} onPasswordChanged={handlePasswordChanged} />
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>
