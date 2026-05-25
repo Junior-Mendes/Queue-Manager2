@@ -36,7 +36,7 @@ router.get("/appointments", requireAuth, loadUserContext, requireRole("tenant_ad
       conditions = and(conditions, gte(appointmentsTable.scheduledAt, start), lte(appointmentsTable.scheduledAt, end));
     }
     const appointments = await db.select().from(appointmentsTable).where(conditions);
-    return res.json(z.array(ListAppointmentsResponse).parse(appointments));
+    return res.json(appointments);
   } catch (err) { return next(err); }
 });
 

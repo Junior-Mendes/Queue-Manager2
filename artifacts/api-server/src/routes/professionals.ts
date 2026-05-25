@@ -18,7 +18,7 @@ router.get("/businesses/:businessId/professionals", requireAuth, loadUserContext
     const { businessId } = req.params;
     const professionals = await db.select().from(professionalsTable)
       .where(and(eq(professionalsTable.businessId, businessId as string), eq(professionalsTable.tenantId, req.tenantId!)));
-    return res.json(z.array(ListProfessionalsResponse).parse(professionals));
+    return res.json(professionals);
   } catch (err) { return next(err); }
 });
 
