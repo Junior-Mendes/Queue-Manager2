@@ -15,8 +15,12 @@ import { z } from "zod";
 const router = Router();
 
 // Business CRUD: tenant_admin or super_admin only
-router.get("/businesses", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
+router.get("/businesses", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), async (req, res, next) => {
   try {
+    if (req.role === "super_admin") {
+      const businesses = await db.select().from(businessesTable);
+      return res.json(businesses);
+    }
     const businesses = await db.select().from(businessesTable).where(eq(businessesTable.tenantId, req.tenantId!));
     return res.json(businesses);
   } catch (err) { return next(err); }

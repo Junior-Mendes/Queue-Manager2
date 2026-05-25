@@ -11,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Pencil, Trash2, Store } from "lucide-react";
+import { Plus, Pencil, Trash2, Store, QrCode } from "lucide-react";
+import QRCode from "qrcode";
 import { useToast } from "@/hooks/use-toast";
 
 const emptyForm = {
@@ -27,6 +28,8 @@ const emptyForm = {
 export default function Businesses() {
   const { data: businesses, isLoading } = useListBusinesses();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState(emptyForm);
   const { toast } = useToast();
@@ -82,6 +85,17 @@ export default function Businesses() {
           onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
         }
       );
+    }
+  }
+
+  async function openQr(b: any) {
+    const url = `${window.location.origin}/customer-web/${b.slug}`;
+    try {
+      const dataUrl = await QRCode.toDataURL(url, { width: 300, margin: 2 });
+      setQrDataUrl(dataUrl);
+      setQrDialogOpen(true);
+    } catch {
+      toast({ title: "Error generating QR code", variant: "destructive" });
     }
   }
 
@@ -141,6 +155,9 @@ export default function Businesses() {
                 <div className="flex items-center justify-between">
                   <CardTitle>{business.name}</CardTitle>
                   <div className="flex gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => openQr(business)} title="QR Code">
+                      <QrCode className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => openEdit(business)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -260,6 +277,34 @@ export default function Businesses() {
                 : (createBusiness.isPending ? "Creating..." : "Create Business")}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* QR Code Dialog */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>QR Code do Estabelecimento</DialogTitle>
+            <DialogDescription>
+              Imprima ou compartilhe este QR code para que clientes acessem sua página.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-2">
+            {qrDataUrl && (
+              <img src={qrDataUrl} alt="QR Code" className="w-64 h-64 rounded-lg border" />
+            )}
+            <Button
+              variant="outline"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = qrDataUrl;
+                link.download = "qrcode.png";
+                link.click();
+              }}
+            >
+              Baixar QR Code
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -29,14 +29,18 @@ router.get("/queues", requireAuth, loadUserContext, requireRole("tenant_admin", 
   } catch (err) { return next(err); }
 });
 
-router.post("/queues", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
+router.post("/queues", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), async (req, res, next) => {
   try {
     const body = CreateQueueBody.parse(req.body);
-    const business = await db.select().from(businessesTable).where(and(eq(businessesTable.id, body.businessId), eq(businessesTable.tenantId, req.tenantId!))).then(r => r[0]);
-    if (!business) return res.status(403).json({ error: "Business does not belong to tenant" });
+    const business = await db.select().from(businessesTable).where(eq(businessesTable.id, body.businessId)).then(r => r[0]);
+    if (!business) return res.status(404).json({ error: "Business not found" });
+    // For non-super-admins, verify business belongs to their tenant
+    if (req.role !== "super_admin" && business.tenantId !== req.tenantId) {
+      return res.status(403).json({ error: "Business does not belong to tenant" });
+    }
     const [queue] = await db.insert(queuesTable).values({
       ...body,
-      tenantId: req.tenantId!,
+      tenantId: business.tenantId,
     }).returning();
     return res.status(201).json(queue);
   } catch (err) { return next(err); }
