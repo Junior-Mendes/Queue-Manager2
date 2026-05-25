@@ -66,6 +66,17 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    proxy: {
+      "/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+      "/super-admin/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/super-admin\/api/, "/api"),
+      },
+    },
   },
   preview: {
     port,
