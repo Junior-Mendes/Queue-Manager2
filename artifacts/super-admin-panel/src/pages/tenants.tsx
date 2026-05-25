@@ -1,13 +1,28 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { useListTenants, useUpdateTenantStatus, getListTenantsQueryKey } from "@workspace/api-client-react";
-import type { Tenant, TenantStatus } from "@workspace/api-client-react";
+import {
+  useListTenants,
+  useUpdateTenantStatus,
+  useCreateTenant,
+  useListPlans,
+  getListTenantsQueryKey,
+} from "@workspace/api-client-react";
+import type { Tenant, TenantStatus, CreateTenantInput } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +34,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Search, Building2, Eye, PauseCircle, PlayCircle, XCircle } from "lucide-react";
+import { Search, Building2, Eye, PauseCircle, PlayCircle, XCircle, Plus, AlertCircle } from "lucide-react";
 
 const statusColors: Record<TenantStatus, string> = {
   active: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100",
@@ -28,9 +43,19 @@ const statusColors: Record<TenantStatus, string> = {
   cancelled: "bg-slate-100 text-slate-700 hover:bg-slate-100",
 };
 
+const emptyTenant: CreateTenantInput = {
+  name: "",
+  slug: "",
+  email: "",
+  phone: null,
+  planId: null,
+};
+
 export default function TenantsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [form, setForm] = useState<CreateTenantInput>(emptyTenant);
   const queryClient = useQueryClient();
 
   const { data: tenants, isLoading } = useListTenants(
@@ -38,10 +63,22 @@ export default function TenantsPage() {
     {}
   );
 
+  const { data: plans } = useListPlans({});
+
   const updateStatus = useUpdateTenantStatus({
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey() });
+      },
+    },
+  });
+
+  const createTenant = useCreateTenant({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListTenantsQueryKey() });
+        setIsCreateOpen(false);
+        setForm(emptyTenant);
       },
     },
   });
@@ -55,6 +92,22 @@ export default function TenantsPage() {
     );
   });
 
+  const handleCreateSubmit = () => {
+    if (!form.name.trim() || !form.slug.trim() || !form.email.trim()) return;
+    createTenant.mutate({ data: form });
+  };
+
+  const handleNameChange = (name: string) => {
+    const autoSlug = form.slug === "" || form.slug === form.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    setForm({
+      ...form,
+      name,
+      slug: autoSlug
+        ? name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")
+        : form.slug,
+    });
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -62,6 +115,10 @@ export default function TenantsPage() {
           <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
           <p className="text-muted-foreground">Manage all platform tenants.</p>
         </div>
+        <Button onClick={() => { setForm(emptyTenant); createTenant.reset(); setIsCreateOpen(true); }} data-testid="button-new-tenant">
+          <Plus className="h-4 w-4 mr-2" />
+          New Tenant
+        </Button>
       </div>
 
       <Card>
@@ -216,6 +273,91 @@ export default function TenantsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open) => { setIsCreateOpen(open); if (!open) createTenant.reset(); }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>New Tenant</DialogTitle>
+            <DialogDescription>
+              Create a new B2B tenant and assign them to a plan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            {createTenant.error && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{(createTenant.error as Error).message}</span>
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Label htmlFor="tenant-name">Company Name <span className="text-destructive">*</span></Label>
+              <Input
+                id="tenant-name"
+                value={form.name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                placeholder="e.g. Barbearia Silva"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tenant-slug">Slug <span className="text-destructive">*</span></Label>
+              <Input
+                id="tenant-slug"
+                value={form.slug}
+                onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") })}
+                placeholder="e.g. barbearia-silva"
+              />
+              <p className="text-xs text-muted-foreground">Unique identifier used in URLs. Auto-filled from name.</p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tenant-email">Email <span className="text-destructive">*</span></Label>
+              <Input
+                id="tenant-email"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="owner@barbearia.com"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tenant-phone">Phone</Label>
+              <Input
+                id="tenant-phone"
+                value={form.phone || ""}
+                onChange={(e) => setForm({ ...form, phone: e.target.value || null })}
+                placeholder="+55 11 99999-9999 (optional)"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tenant-plan">Plan</Label>
+              <select
+                id="tenant-plan"
+                value={form.planId || ""}
+                onChange={(e) => setForm({ ...form, planId: e.target.value || null })}
+                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">No plan (trial)</option>
+                {(plans || []).filter(p => p.status === "active").map(p => (
+                  <option key={p.id} value={p.id}>{p.name} — ${p.price.toFixed(2)}/mo</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateSubmit}
+              disabled={!form.name.trim() || !form.slug.trim() || !form.email.trim() || createTenant.isPending}
+            >
+              {createTenant.isPending ? "Creating..." : "Create Tenant"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

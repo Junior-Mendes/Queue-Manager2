@@ -2,7 +2,9 @@ import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ClerkProvider, Show, SignIn } from "@clerk/react";
+import { ClerkProvider, Show, SignIn, useAuth } from "@clerk/react";
+import { useEffect } from "react";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
 
 import { Layout } from "@/components/layout";
 import Dashboard from "@/pages/dashboard";
@@ -21,6 +23,15 @@ const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+function ApiAuthSetup() {
+  const { getToken } = useAuth();
+  useEffect(() => {
+    setAuthTokenGetter(() => getToken());
+    return () => setAuthTokenGetter(null);
+  }, [getToken]);
+  return null;
+}
+
 function SignInRoute() {
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-muted/40 p-4">
@@ -31,18 +42,21 @@ function SignInRoute() {
 
 function AuthenticatedRouter() {
   return (
-    <Layout>
-      <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/tenants" component={TenantsPage} />
-        <Route path="/tenants/:id">
-          {(params) => <TenantDetailPage tenantId={params.id} />}
-        </Route>
-        <Route path="/plans" component={PlansPage} />
-        <Route component={NotFound} />
-      </Switch>
-    </Layout>
+    <>
+      <ApiAuthSetup />
+      <Layout>
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/dashboard" component={Dashboard} />
+          <Route path="/tenants" component={TenantsPage} />
+          <Route path="/tenants/:id">
+            {(params) => <TenantDetailPage tenantId={params.id} />}
+          </Route>
+          <Route path="/plans" component={PlansPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Layout>
+    </>
   );
 }
 
