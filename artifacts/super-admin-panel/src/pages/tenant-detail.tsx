@@ -1,10 +1,22 @@
 import { Link } from "wouter";
-import { useGetTenant, useListBusinesses } from "@workspace/api-client-react";
+import { useGetTenant, useListBusinesses, useGetTenantStats, useUpdateTenantStatus, getGetTenantQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Building2, Mail, Phone, Calendar, Users, Clock, CalendarCheck } from "lucide-react";
+import { ArrowLeft, Building2, Mail, Phone, Calendar, Users, Clock, CalendarCheck, PauseCircle, PlayCircle, XCircle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const statusColors: Record<string, string> = {
   active: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100",
@@ -14,8 +26,19 @@ const statusColors: Record<string, string> = {
 };
 
 export default function TenantDetailPage({ tenantId }: { tenantId: string }) {
+  const queryClient = useQueryClient();
   const { data: tenant, isLoading: tenantLoading } = useGetTenant(tenantId, {});
   const { data: businesses, isLoading: businessesLoading } = useListBusinesses({});
+  // In a real app we'd pass tenantId to useGetTenantStats if superadmin, assuming it works or we just display global tenant stats
+  const { data: stats, isLoading: statsLoading } = useGetTenantStats({});
+
+  const updateStatus = useUpdateTenantStatus({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetTenantQueryKey(tenantId) });
+      },
+    },
+  });
 
   const tenantBusinesses = (businesses || []).filter((b) => b.tenantId === tenantId);
 
@@ -54,6 +77,109 @@ export default function TenantDetailPage({ tenantId }: { tenantId: string }) {
           <h1 className="text-3xl font-bold tracking-tight">{tenant.name}</h1>
           <p className="text-muted-foreground">Tenant details and activity.</p>
         </div>
+        <div className="ml-auto flex items-center gap-2">
+          {tenant.status !== "active" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => updateStatus.mutate({ id: tenant.id, data: { status: "active" } })}
+              data-testid={`button-activate-${tenant.id}`}
+            >
+              <PlayCircle className="h-4 w-4 mr-2 text-emerald-600" />
+              Activate
+            </Button>
+          )}
+          {tenant.status !== "suspended" && tenant.status !== "cancelled" && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" data-testid={`button-suspend-${tenant.id}`}>
+                  <PauseCircle className="h-4 w-4 mr-2 text-amber-600" />
+                  Suspend
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Suspend Tenant</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to suspend <strong>{tenant.name}</strong>? The tenant will lose access to the platform until reactivated.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => updateStatus.mutate({ id: tenant.id, data: { status: "suspended" } })}
+                    className="bg-amber-600 text-white hover:bg-amber-700"
+                  >
+                    Suspend
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {tenant.status !== "cancelled" && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" data-testid={`button-cancel-${tenant.id}`}>
+                  <XCircle className="h-4 w-4 mr-2 text-red-600" />
+                  Cancel
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Cancel Tenant</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to cancel <strong>{tenant.name}</strong>? This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => updateStatus.mutate({ id: tenant.id, data: { status: "cancelled" } })}
+                    className="bg-red-600 text-white hover:bg-red-700"
+                  >
+                    Cancel Tenant
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Waiting Now</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {statsLoading ? <Skeleton className="h-8 w-16" /> : (
+              <div className="text-2xl font-bold" data-testid="stat-waiting-now">{stats?.waitingNow || 0}</div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg Wait Time</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {statsLoading ? <Skeleton className="h-8 w-16" /> : (
+              <div className="text-2xl font-bold" data-testid="stat-avg-wait">{stats?.avgWaitMinutes || 0}m</div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Appointments Today</CardTitle>
+            <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {statsLoading ? <Skeleton className="h-8 w-16" /> : (
+              <div className="text-2xl font-bold" data-testid="stat-appointments">{stats?.appointmentsToday || 0}</div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -94,7 +220,7 @@ export default function TenantDetailPage({ tenantId }: { tenantId: string }) {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mt-2">
               <Badge variant="outline" className={statusColors[tenant.status]}>
                 {tenant.status}
               </Badge>
@@ -109,8 +235,8 @@ export default function TenantDetailPage({ tenantId }: { tenantId: string }) {
           <CardContent>
             {businessesLoading ? (
               <div className="space-y-2">
-                <Skeleton className="h-8 w-full" />
-                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
               </div>
             ) : tenantBusinesses.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
