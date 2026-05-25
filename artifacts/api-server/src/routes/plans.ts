@@ -14,6 +14,7 @@ import { z } from "zod";
 
 const router = Router();
 
+// Plans: super_admin only
 router.get("/plans", requireAuth, loadUserContext, requireRole("super_admin"), async (_req, res, next) => {
   try {
     const plans = await db.select().from(plansTable);

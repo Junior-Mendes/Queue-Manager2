@@ -29,17 +29,31 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void | Re
 async function loadUserContext(req: Request, _res: Response, next: NextFunction) {
   if (!req.userId) return next();
 
-  // Check metadata for role (super_admin, tenant_admin, operator)
   const auth = getAuth(req);
   const metadata = (auth?.sessionClaims as any)?.metadata ?? {};
   const role = metadata?.role;
+  const tenantId = metadata?.tenantId;
 
   if (role === "super_admin") {
     req.role = "super_admin";
     return next();
   }
 
-  // Find tenant by ownerClerkId for tenant_admin
+  if (role === "tenant_admin" && tenantId) {
+    req.role = "tenant_admin";
+    req.tenantId = tenantId;
+    return next();
+  }
+
+  if (role === "operator" && tenantId) {
+    req.role = "operator";
+    req.tenantId = tenantId;
+    const businessId = metadata?.businessId;
+    if (businessId) req.businessId = businessId;
+    return next();
+  }
+
+  // Fallback: derive role and tenant from database lookups
   const tenant = await db.query.tenantsTable.findFirst({
     where: eq(tenantsTable.ownerClerkId, req.userId),
   });
@@ -50,7 +64,6 @@ async function loadUserContext(req: Request, _res: Response, next: NextFunction)
     return next();
   }
 
-  // Check if user is a professional/operator
   const prof = await db.query.professionalsTable.findFirst({
     where: eq(professionalsTable.clerkId, req.userId),
   });

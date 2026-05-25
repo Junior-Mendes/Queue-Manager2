@@ -9,12 +9,13 @@ import {
   GetQueueParams,
   UpdateQueueStatusBody,
 } from "@workspace/api-zod";
-import { requireAuth, loadUserContext, requireTenant } from "../middlewares/auth";
+import { requireAuth, loadUserContext, requireRole, requireTenant } from "../middlewares/auth";
 import { z } from "zod";
 
 const router = Router();
 
-router.get("/queues", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+// Queue management: tenant_admin, operator, or super_admin
+router.get("/queues", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const query = ListQueuesQueryParams.safeParse(req.query);
     const businessId = query.success ? query.data.businessId : "";
@@ -28,10 +29,9 @@ router.get("/queues", requireAuth, loadUserContext, requireTenant, async (req, r
   } catch (err) { return next(err); }
 });
 
-router.post("/queues", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.post("/queues", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const body = CreateQueueBody.parse(req.body);
-    // Verify business belongs to the tenant
     const business = await db.select().from(businessesTable).where(and(eq(businessesTable.id, body.businessId), eq(businessesTable.tenantId, req.tenantId!))).then(r => r[0]);
     if (!business) return res.status(403).json({ error: "Business does not belong to tenant" });
     const [queue] = await db.insert(queuesTable).values({
@@ -42,13 +42,13 @@ router.post("/queues", requireAuth, loadUserContext, requireTenant, async (req, 
   } catch (err) { return next(err); }
 });
 
-router.get("/queues/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.get("/queues/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = GetQueueParams.parse({ id: req.params.id });
     const queue = await db.select().from(queuesTable).where(and(eq(queuesTable.id, params.id), eq(queuesTable.tenantId, req.tenantId!))).then(r => r[0]);
     if (!queue) return res.status(404).json({ error: "Not found" });
     const entries = await db.select().from(queueEntriesTable)
-      .where(and(eq(queueEntriesTable.queueId, params.id), eq(queueEntriesTable.status, "waiting")))
+      .where(and(eq(queueEntriesTable.queueId, params.id), eq(queueEntriesTable.tenantId, req.tenantId!), eq(queueEntriesTable.status, "waiting")))
       .orderBy(asc(queueEntriesTable.ticketNumber));
     const enrichedEntries = entries.map((entry, idx) => ({
       ...entry,
@@ -59,7 +59,7 @@ router.get("/queues/:id", requireAuth, loadUserContext, requireTenant, async (re
   } catch (err) { return next(err); }
 });
 
-router.patch("/queues/:id/status", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.patch("/queues/:id/status", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = GetQueueParams.parse({ id: req.params.id });
     const body = UpdateQueueStatusBody.parse(req.body);
@@ -70,13 +70,13 @@ router.patch("/queues/:id/status", requireAuth, loadUserContext, requireTenant, 
   } catch (err) { return next(err); }
 });
 
-router.post("/queues/:id/call-next", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.post("/queues/:id/call-next", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = GetQueueParams.parse({ id: req.params.id });
     const queue = await db.select().from(queuesTable).where(and(eq(queuesTable.id, params.id), eq(queuesTable.tenantId, req.tenantId!))).then(r => r[0]);
     if (!queue) return res.status(404).json({ error: "Not found" });
     const nextEntry = await db.select().from(queueEntriesTable)
-      .where(and(eq(queueEntriesTable.queueId, params.id), eq(queueEntriesTable.status, "waiting")))
+      .where(and(eq(queueEntriesTable.queueId, params.id), eq(queueEntriesTable.tenantId, req.tenantId!), eq(queueEntriesTable.status, "waiting")))
       .orderBy(asc(queueEntriesTable.ticketNumber))
       .limit(1)
       .then(r => r[0]);

@@ -17,7 +17,7 @@ router.get("/stats/saas", requireAuth, loadUserContext, requireRole("super_admin
     const queuesToday = await db.select({ count: count() }).from(queuesTable).where(eq(queuesTable.date, today)).then(r => r[0]?.count ?? 0);
     const apptsToday = await db.select({ count: count() }).from(appointmentsTable).where(gte(appointmentsTable.scheduledAt, new Date(today))).then(r => r[0]?.count ?? 0);
     const apptsMonth = await db.select({ count: count() }).from(appointmentsTable).where(gte(appointmentsTable.scheduledAt, new Date(startOfMonth))).then(r => r[0]?.count ?? 0);
-    res.json({
+    return res.json({
       totalTenants: tenants.length,
       activeTenants: tenants.filter(t => t.status === "active").length,
       trialTenants: tenants.filter(t => t.status === "trial").length,
@@ -27,10 +27,10 @@ router.get("/stats/saas", requireAuth, loadUserContext, requireRole("super_admin
       totalAppointmentsToday: apptsToday,
       totalAppointmentsThisMonth: apptsMonth,
     });
-  } catch (err) { next(err); }
+  } catch (err) { return next(err); }
 });
 
-router.get("/stats/tenant", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.get("/stats/tenant", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const tenantId = req.tenantId!;
     const businesses = await db.select().from(businessesTable).where(eq(businessesTable.tenantId, tenantId));
@@ -59,7 +59,7 @@ router.get("/stats/tenant", requireAuth, loadUserContext, requireTenant, async (
       .where(and(eq(queueEntriesTable.tenantId, tenantId), eq(queueEntriesTable.status, "no_show")))
       .then(r => r[0]?.count ?? 0);
     const noShowRate = totalEntries > 0 ? Math.round((noShows / totalEntries) * 100) : 0;
-    res.json({
+    return res.json({
       totalBusinesses: businesses.length,
       waitingNow: waiting,
       servedToday,
@@ -68,7 +68,7 @@ router.get("/stats/tenant", requireAuth, loadUserContext, requireTenant, async (
       avgWaitMinutes: avgWait || 15,
       noShowRate,
     });
-  } catch (err) { next(err); }
+  } catch (err) { return next(err); }
 });
 
 export default router;

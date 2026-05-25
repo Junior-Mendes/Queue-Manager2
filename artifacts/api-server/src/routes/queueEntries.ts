@@ -10,15 +10,15 @@ import {
   GetQueueEntryParams,
   UpdateQueueEntryStatusBody,
 } from "@workspace/api-zod";
-import { requireAuth, loadUserContext, requireTenant } from "../middlewares/auth";
+import { requireAuth, loadUserContext, requireRole, requireTenant } from "../middlewares/auth";
 import { z } from "zod";
 
 const router = Router();
 
-router.get("/queues/:queueId/entries", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+// Queue entries: tenant_admin, operator, or super_admin
+router.get("/queues/:queueId/entries", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = ListQueueEntriesParams.parse({ queueId: req.params.queueId });
-    // Verify queue belongs to tenant
     const queue = await db.select().from(queuesTable).where(and(eq(queuesTable.id, params.queueId), eq(queuesTable.tenantId, req.tenantId!))).then(r => r[0]);
     if (!queue) return res.status(404).json({ error: "Queue not found" });
     const query = ListQueueEntriesQueryParams.safeParse(req.query);
@@ -31,6 +31,7 @@ router.get("/queues/:queueId/entries", requireAuth, loadUserContext, requireTena
   } catch (err) { return next(err); }
 });
 
+// Anonymous clients can join queue (no auth)
 router.post("/queues/:queueId/entries", async (req, res, next) => {
   try {
     const { queueId } = req.params;
@@ -50,7 +51,7 @@ router.post("/queues/:queueId/entries", async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.get("/queues/:queueId/entries/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.get("/queues/:queueId/entries/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const { id } = req.params;
     const entry = await db.select().from(queueEntriesTable).where(and(eq(queueEntriesTable.id, id as string), eq(queueEntriesTable.tenantId, req.tenantId!))).then(r => r[0]);
@@ -59,7 +60,7 @@ router.get("/queues/:queueId/entries/:id", requireAuth, loadUserContext, require
   } catch (err) { return next(err); }
 });
 
-router.patch("/queues/:queueId/entries/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.patch("/queues/:queueId/entries/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const { id } = req.params;
     const body = UpdateQueueEntryStatusBody.parse(req.body);
