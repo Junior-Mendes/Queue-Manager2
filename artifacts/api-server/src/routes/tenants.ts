@@ -14,7 +14,7 @@ import { requireAuth, loadUserContext, requireRole, requireTenant } from "../mid
 
 const router = Router();
 
-router.get("/tenants", requireAuth, requireRole("super_admin"), async (req, res, next) => {
+router.get("/tenants", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const query = ListTenantsQueryParams.safeParse(req.query);
     let conditions = undefined;
@@ -73,7 +73,7 @@ router.put("/tenants/:id", requireAuth, loadUserContext, async (req, res, next) 
   } catch (err) { return next(err); }
 });
 
-router.patch("/tenants/:id/status", requireAuth, requireRole("super_admin"), async (req, res, next) => {
+router.patch("/tenants/:id/status", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const params = GetTenantParams.parse({ id: req.params.id });
     const body = UpdateTenantStatusBody.parse(req.body);

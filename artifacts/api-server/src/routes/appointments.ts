@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { appointmentsTable, servicesTable } from "@workspace/db";
+import { appointmentsTable, businessesTable } from "@workspace/db";
 import { eq, and, gte, lte } from "drizzle-orm";
 import {
   ListAppointmentsQueryParams,
@@ -41,9 +41,12 @@ router.get("/appointments", requireAuth, loadUserContext, requireTenant, async (
 router.post("/appointments", async (req, res, next) => {
   try {
     const body = CreateAppointmentBody.parse(req.body);
+    // Derive tenantId from business lookup — never trust client body
+    const business = await db.select().from(businessesTable).where(eq(businessesTable.id, body.businessId)).then(r => r[0]);
+    if (!business) return res.status(404).json({ error: "Business not found" });
     const insertData: any = {
       ...body,
-      tenantId: (body as any).tenantId || "",
+      tenantId: business.tenantId,
       scheduledAt: new Date(body.scheduledAt),
     };
     const [appointment] = await db.insert(appointmentsTable).values(insertData).returning();

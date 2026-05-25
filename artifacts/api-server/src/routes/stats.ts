@@ -8,7 +8,7 @@ import { requireAuth, loadUserContext, requireRole, requireTenant } from "../mid
 
 const router = Router();
 
-router.get("/stats/saas", requireAuth, requireRole("super_admin"), async (_req, res, next) => {
+router.get("/stats/saas", requireAuth, loadUserContext, requireRole("super_admin"), async (_req, res, next) => {
   try {
     const tenants = await db.select().from(tenantsTable);
     const businesses = await db.select().from(businessesTable);

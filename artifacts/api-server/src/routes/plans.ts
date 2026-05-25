@@ -9,19 +9,19 @@ import {
   UpdatePlanBody,
   DeletePlanParams,
 } from "@workspace/api-zod";
-import { requireAuth, requireRole } from "../middlewares/auth";
+import { requireAuth, loadUserContext, requireRole } from "../middlewares/auth";
 import { z } from "zod";
 
 const router = Router();
 
-router.get("/plans", requireAuth, requireRole("super_admin"), async (_req, res, next) => {
+router.get("/plans", requireAuth, loadUserContext, requireRole("super_admin"), async (_req, res, next) => {
   try {
     const plans = await db.select().from(plansTable);
     return res.json(z.array(ListPlansResponse).parse(plans));
   } catch (err) { return next(err); }
 });
 
-router.post("/plans", requireAuth, requireRole("super_admin"), async (req, res, next) => {
+router.post("/plans", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const body = CreatePlanBody.parse(req.body);
     const [plan] = await db.insert(plansTable).values(body).returning();
@@ -29,7 +29,7 @@ router.post("/plans", requireAuth, requireRole("super_admin"), async (req, res, 
   } catch (err) { return next(err); }
 });
 
-router.get("/plans/:id", requireAuth, requireRole("super_admin"), async (req, res, next) => {
+router.get("/plans/:id", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const params = GetPlanParams.parse({ id: req.params.id });
     const plan = await db.select().from(plansTable).where(eq(plansTable.id, params.id)).then(r => r[0]);
@@ -38,7 +38,7 @@ router.get("/plans/:id", requireAuth, requireRole("super_admin"), async (req, re
   } catch (err) { return next(err); }
 });
 
-router.put("/plans/:id", requireAuth, requireRole("super_admin"), async (req, res, next) => {
+router.put("/plans/:id", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const params = GetPlanParams.parse({ id: req.params.id });
     const body = CreatePlanBody.parse(req.body);
@@ -48,7 +48,7 @@ router.put("/plans/:id", requireAuth, requireRole("super_admin"), async (req, re
   } catch (err) { return next(err); }
 });
 
-router.delete("/plans/:id", requireAuth, requireRole("super_admin"), async (req, res, next) => {
+router.delete("/plans/:id", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const params = DeletePlanParams.parse({ id: req.params.id });
     await db.delete(plansTable).where(eq(plansTable.id, params.id));
