@@ -10,12 +10,13 @@ import {
   UpdateAppointmentStatusBody,
   GetAvailableSlotsQueryParams,
 } from "@workspace/api-zod";
-import { requireAuth, loadUserContext, requireTenant } from "../middlewares/auth";
+import { requireAuth, loadUserContext, requireRole, requireTenant } from "../middlewares/auth";
 import { z } from "zod";
 
 const router = Router();
 
-router.get("/appointments", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+// Appointment management: tenant_admin, operator, or super_admin
+router.get("/appointments", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const query = ListAppointmentsQueryParams.safeParse(req.query);
     const businessId = query.success ? query.data.businessId : "";
@@ -84,7 +85,7 @@ router.post("/appointments", async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.get("/appointments/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.get("/appointments/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = GetAppointmentParams.parse({ id: req.params.id });
     const appointment = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.id), eq(appointmentsTable.tenantId, req.tenantId!))).then(r => r[0]);
@@ -93,7 +94,7 @@ router.get("/appointments/:id", requireAuth, loadUserContext, requireTenant, asy
   } catch (err) { return next(err); }
 });
 
-router.patch("/appointments/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.patch("/appointments/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = GetAppointmentParams.parse({ id: req.params.id });
     const body = UpdateAppointmentStatusBody.parse(req.body);

@@ -13,6 +13,7 @@ import { requireAuth, loadUserContext, requireRole, requireTenant } from "../mid
 
 const router = Router();
 
+// Tenant CRUD: super_admin for list/create/status; tenant_admin for own tenant
 router.get("/tenants", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const query = ListTenantsQueryParams.safeParse(req.query);
@@ -51,7 +52,6 @@ router.get("/tenants/:id", requireAuth, loadUserContext, requireRole("super_admi
     const params = GetTenantParams.parse({ id: req.params.id });
     const tenant = await db.select().from(tenantsTable).where(eq(tenantsTable.id, params.id)).then(r => r[0]);
     if (!tenant) return res.status(404).json({ error: "Not found" });
-    // tenant_admin can only see their own tenant
     if (req.role === "tenant_admin" && tenant.id !== req.tenantId) {
       return res.status(403).json({ error: "Forbidden" });
     }

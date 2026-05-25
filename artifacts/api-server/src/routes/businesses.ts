@@ -9,19 +9,20 @@ import {
   UpdateBusinessBody,
   DeleteBusinessParams,
 } from "@workspace/api-zod";
-import { requireAuth, loadUserContext, requireTenant } from "../middlewares/auth";
+import { requireAuth, loadUserContext, requireRole, requireTenant } from "../middlewares/auth";
 import { z } from "zod";
 
 const router = Router();
 
-router.get("/businesses", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+// Business CRUD: tenant_admin or super_admin only
+router.get("/businesses", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const businesses = await db.select().from(businessesTable).where(eq(businessesTable.tenantId, req.tenantId!));
     return res.json(z.array(ListBusinessesResponse).parse(businesses));
   } catch (err) { return next(err); }
 });
 
-router.post("/businesses", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.post("/businesses", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const body = CreateBusinessBody.parse(req.body);
     const [business] = await db.insert(businessesTable).values({
@@ -32,7 +33,7 @@ router.post("/businesses", requireAuth, loadUserContext, requireTenant, async (r
   } catch (err) { return next(err); }
 });
 
-router.get("/businesses/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.get("/businesses/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = GetBusinessParams.parse({ id: req.params.id });
     const business = await db.select().from(businessesTable)
@@ -43,7 +44,7 @@ router.get("/businesses/:id", requireAuth, loadUserContext, requireTenant, async
   } catch (err) { return next(err); }
 });
 
-router.put("/businesses/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.put("/businesses/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = GetBusinessParams.parse({ id: req.params.id });
     const body = UpdateBusinessBody.parse(req.body);
@@ -56,7 +57,7 @@ router.put("/businesses/:id", requireAuth, loadUserContext, requireTenant, async
   } catch (err) { return next(err); }
 });
 
-router.delete("/businesses/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.delete("/businesses/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = DeleteBusinessParams.parse({ id: req.params.id });
     const existing = await db.select().from(businessesTable)

@@ -8,12 +8,13 @@ import {
   CreateServiceBody,
   UpdateServiceBody,
 } from "@workspace/api-zod";
-import { requireAuth, loadUserContext, requireTenant } from "../middlewares/auth";
+import { requireAuth, loadUserContext, requireRole, requireTenant } from "../middlewares/auth";
 import { z } from "zod";
 
 const router = Router();
 
-router.get("/businesses/:businessId/services", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+// Service CRUD: tenant_admin or super_admin only
+router.get("/businesses/:businessId/services", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const params = ListServicesParams.parse(req.params);
     const services = await db.select().from(servicesTable)
@@ -22,10 +23,9 @@ router.get("/businesses/:businessId/services", requireAuth, loadUserContext, req
   } catch (err) { return next(err); }
 });
 
-router.post("/businesses/:businessId/services", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.post("/businesses/:businessId/services", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const { businessId } = req.params;
-    // Verify business belongs to the tenant
     const business = await db.select().from(businessesTable).where(and(eq(businessesTable.id, businessId as string), eq(businessesTable.tenantId, req.tenantId!))).then(r => r[0]);
     if (!business) return res.status(403).json({ error: "Business does not belong to tenant" });
     const body = CreateServiceBody.parse(req.body);
@@ -38,7 +38,7 @@ router.post("/businesses/:businessId/services", requireAuth, loadUserContext, re
   } catch (err) { return next(err); }
 });
 
-router.put("/businesses/:businessId/services/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.put("/businesses/:businessId/services/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const { businessId, id } = req.params;
     const body = UpdateServiceBody.parse(req.body);
@@ -51,7 +51,7 @@ router.put("/businesses/:businessId/services/:id", requireAuth, loadUserContext,
   } catch (err) { return next(err); }
 });
 
-router.delete("/businesses/:businessId/services/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+router.delete("/businesses/:businessId/services/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const { businessId, id } = req.params;
     const existing = await db.select().from(servicesTable)
