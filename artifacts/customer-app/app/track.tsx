@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,9 +10,11 @@ import {
   useGetAppointment,
   useUpdateAppointmentStatus,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useColors } from "@/hooks/useColors";
 import { useActiveSession } from "@/context/ActiveSessionContext";
 import { LoadingState, ErrorState, EmptyState, PrimaryButton, SecondaryButton } from "@/components/ui";
+import { useQueueWebSocket, useAppointmentWebSocket, type WsStatus } from "@/hooks/useTrackingWebSocket";
 
 export default function TrackScreen() {
   const colors = useColors();
@@ -20,13 +22,6 @@ export default function TrackScreen() {
   const insets = useSafeAreaInsets();
   const { session, clearSession, isLoading: sessionLoading } = useActiveSession();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-
-  // Polling interval
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const iv = setInterval(() => setTick((t) => t + 1), 5000);
-    return () => clearInterval(iv);
-  }, []);
 
   if (sessionLoading) return <LoadingState message="Loading session..." />;
 
@@ -50,7 +45,6 @@ export default function TrackScreen() {
       queueId={session.queueId!}
       entryId={session.id}
       businessName={session.businessName}
-      tick={tick}
       onCancel={() => setShowCancelConfirm(true)}
       showCancel={showCancelConfirm}
       setShowCancel={setShowCancelConfirm}
@@ -61,7 +55,6 @@ export default function TrackScreen() {
   return <AppointmentTracker
     appointmentId={session.id}
     businessName={session.businessName}
-    tick={tick}
     onCancel={() => setShowCancelConfirm(true)}
     showCancel={showCancelConfirm}
     setShowCancel={setShowCancelConfirm}
@@ -69,11 +62,43 @@ export default function TrackScreen() {
   />;
 }
 
+function ConnectionStatusBadge({ status }: { status: WsStatus }) {
+  const colors = useColors();
+
+  if (status === "connected") {
+    return (
+      <View style={[styles.statusBadge, { backgroundColor: colors.success + "20" }]}>
+        <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
+        <Text style={[styles.statusBadgeText, { color: colors.success }]}>Live</Text>
+      </View>
+    );
+  }
+
+  if (status === "fallback") {
+    return (
+      <View style={[styles.statusBadge, { backgroundColor: colors.warning + "20" }]}>
+        <View style={[styles.statusDot, { backgroundColor: colors.warning }]} />
+        <Text style={[styles.statusBadgeText, { color: colors.warning }]}>Polling</Text>
+      </View>
+    );
+  }
+
+  if (status === "connecting") {
+    return (
+      <View style={[styles.statusBadge, { backgroundColor: colors.muted }]}>
+        <View style={[styles.statusDot, { backgroundColor: colors.mutedForeground }]} />
+        <Text style={[styles.statusBadgeText, { color: colors.mutedForeground }]}>Connecting...</Text>
+      </View>
+    );
+  }
+
+  return null;
+}
+
 function QueueTracker({
   queueId,
   entryId,
   businessName,
-  tick,
   onCancel,
   showCancel,
   setShowCancel,
@@ -82,7 +107,6 @@ function QueueTracker({
   queueId: string;
   entryId: string;
   businessName?: string;
-  tick: number;
   onCancel: () => void;
   showCancel: boolean;
   setShowCancel: (v: boolean) => void;
@@ -91,11 +115,41 @@ function QueueTracker({
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+
+  // Polling tick — used only as fallback when WebSocket is unavailable
+  const [tick, setTick] = useState(0);
+  const [wsStatus, setWsStatus] = useState<WsStatus>("connecting");
+
+  const wsStatusResult = useQueueWebSocket(queueId, entryId, {
+    enabled: !!queueId && !!entryId,
+    onEntryUpdate: useCallback((data: unknown) => {
+      queryClient.setQueryData(["/api/queues/entry", queueId, entryId], data);
+    }, [queryClient, queueId, entryId]),
+    onQueueUpdate: useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/queues/entry", queueId, entryId] });
+    }, [queryClient, queueId, entryId]),
+  });
+
+  useEffect(() => {
+    setWsStatus(wsStatusResult);
+  }, [wsStatusResult]);
+
+  // Fallback polling — only active when WebSocket is not connected
+  useEffect(() => {
+    if (wsStatus !== "fallback") return;
+    const iv = setInterval(() => setTick((t) => t + 1), 5000);
+    return () => clearInterval(iv);
+  }, [wsStatus]);
+
+  const queryKey = wsStatus === "fallback"
+    ? ["/api/queues/entry", queueId, entryId, tick]
+    : ["/api/queues/entry", queueId, entryId];
 
   const { data: entry, isLoading, error, refetch } = useGetQueueEntry(
     queueId,
     entryId,
-    { query: { enabled: !!queueId && !!entryId, queryKey: ["/api/queues/entry", queueId, entryId, tick] } }
+    { query: { enabled: !!queueId && !!entryId, queryKey } }
   );
 
   const cancelMutation = useUpdateQueueEntryStatus();
@@ -128,8 +182,13 @@ function QueueTracker({
           paddingHorizontal: 20,
         }}
       >
-        <Text style={[styles.trackTitle, { color: colors.foreground }]}>Your Queue</Text>
-        {businessName && <Text style={[styles.trackSub, { color: colors.mutedForeground }]}>{businessName}</Text>}
+        <View style={styles.titleRow}>
+          <View>
+            <Text style={[styles.trackTitle, { color: colors.foreground }]}>Your Queue</Text>
+            {businessName && <Text style={[styles.trackSub, { color: colors.mutedForeground }]}>{businessName}</Text>}
+          </View>
+          <ConnectionStatusBadge status={wsStatus} />
+        </View>
 
         <View style={[styles.ticketCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.ticketLabel, { color: colors.mutedForeground }]}>Ticket Number</Text>
@@ -197,7 +256,6 @@ function QueueTracker({
 function AppointmentTracker({
   appointmentId,
   businessName,
-  tick,
   onCancel,
   showCancel,
   setShowCancel,
@@ -205,7 +263,6 @@ function AppointmentTracker({
 }: {
   appointmentId: string;
   businessName?: string;
-  tick: number;
   onCancel: () => void;
   showCancel: boolean;
   setShowCancel: (v: boolean) => void;
@@ -214,10 +271,35 @@ function AppointmentTracker({
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+
+  const [tick, setTick] = useState(0);
+  const [wsStatus, setWsStatus] = useState<WsStatus>("connecting");
+
+  const wsStatusResult = useAppointmentWebSocket(appointmentId, {
+    enabled: !!appointmentId,
+    onMessage: useCallback((data: unknown) => {
+      queryClient.setQueryData(["/api/appointments", appointmentId], data);
+    }, [queryClient, appointmentId]),
+  });
+
+  useEffect(() => {
+    setWsStatus(wsStatusResult);
+  }, [wsStatusResult]);
+
+  useEffect(() => {
+    if (wsStatus !== "fallback") return;
+    const iv = setInterval(() => setTick((t) => t + 1), 5000);
+    return () => clearInterval(iv);
+  }, [wsStatus]);
+
+  const queryKey = wsStatus === "fallback"
+    ? ["/api/appointments", appointmentId, tick]
+    : ["/api/appointments", appointmentId];
 
   const { data: appt, isLoading, error, refetch } = useGetAppointment(
     appointmentId,
-    { query: { enabled: !!appointmentId, queryKey: ["/api/appointments", appointmentId, tick] } }
+    { query: { enabled: !!appointmentId, queryKey } }
   );
 
   const cancelMutation = useUpdateAppointmentStatus();
@@ -267,8 +349,13 @@ function AppointmentTracker({
           paddingHorizontal: 20,
         }}
       >
-        <Text style={[styles.trackTitle, { color: colors.foreground }]}>Your Appointment</Text>
-        {businessName && <Text style={[styles.trackSub, { color: colors.mutedForeground }]}>{businessName}</Text>}
+        <View style={styles.titleRow}>
+          <View>
+            <Text style={[styles.trackTitle, { color: colors.foreground }]}>Your Appointment</Text>
+            {businessName && <Text style={[styles.trackSub, { color: colors.mutedForeground }]}>{businessName}</Text>}
+          </View>
+          <ConnectionStatusBadge status={wsStatus} />
+        </View>
 
         <View style={[styles.ticketCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.ticketLabel, { color: colors.mutedForeground }]}>Date & Time</Text>
@@ -338,8 +425,32 @@ function AppointmentTracker({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: "center", paddingHorizontal: 24 },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
   trackTitle: { fontSize: 24, fontFamily: "Inter_700Bold", marginBottom: 4 },
-  trackSub: { fontSize: 15, fontFamily: "Inter_400Regular", marginBottom: 24 },
+  trackSub: { fontSize: 15, fontFamily: "Inter_400Regular" },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginTop: 4,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
   ticketCard: {
     borderWidth: 1,
     borderRadius: 16,
