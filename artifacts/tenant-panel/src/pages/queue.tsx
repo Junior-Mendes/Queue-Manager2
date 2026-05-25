@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   useListBusinesses,
   useListQueues,
+  useCreateQueue,
   useListQueueEntries,
   useCallNext,
   useUpdateQueueEntryStatus,
@@ -140,8 +141,11 @@ export default function QueuePage() {
         <Card className="p-12 text-center">
           <CardHeader>
             <CardTitle>No Active Queue</CardTitle>
-            <CardDescription>There is no queue for today. Create one from the dashboard.</CardDescription>
+            <CardDescription>There is no queue open for today.</CardDescription>
           </CardHeader>
+          <CardContent>
+            <CreateQueueButton businessId={selectedBusinessId} />
+          </CardContent>
         </Card>
       ) : (
         <>
@@ -263,5 +267,27 @@ export default function QueuePage() {
         </>
       )}
     </div>
+  );
+}
+
+function CreateQueueButton({ businessId }: { businessId: string }) {
+  const { toast } = useToast();
+  const createQueue = useCreateQueue();
+  const today = new Date().toISOString().split("T")[0];
+
+  function handleCreate() {
+    createQueue.mutate(
+      { data: { businessId, date: today } },
+      {
+        onSuccess: () => toast({ title: "Queue opened for today" }),
+        onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+      }
+    );
+  }
+
+  return (
+    <Button onClick={handleCreate} disabled={createQueue.isPending}>
+      {createQueue.isPending ? "Opening..." : "Open Queue for Today"}
+    </Button>
   );
 }

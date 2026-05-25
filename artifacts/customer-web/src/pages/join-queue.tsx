@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, List, User, Phone, CheckCircle } from "lucide-react";
 import {
   useGetPublicBusiness,
-  useListQueues,
+  useGetPublicQueues,
   useJoinQueue,
 } from "@workspace/api-client-react";
 import { saveSession } from "@/lib/session";
@@ -35,9 +35,9 @@ export default function JoinQueuePage() {
     query: { enabled: !!slug, queryKey: ["/public/businesses", slug] },
   });
 
-  const { data: queues, isLoading: loadingQueues } = useListQueues(
-    { businessId: business?.id || "", date: today },
-    { query: { enabled: !!business?.id, queryKey: ["/api/queues", business?.id, today] } }
+  const { data: queues, isLoading: loadingQueues } = useGetPublicQueues(
+    slug || "",
+    { query: { enabled: !!slug, queryKey: ["/api/public/businesses", slug, "queues"] } }
   );
 
   const joinQueue = useJoinQueue();
@@ -202,7 +202,7 @@ export default function JoinQueuePage() {
 
         {!activeQueue && !loadingQueues && (
           <p className="text-sm text-destructive">
-            Não há fila aberta para esta seleção. Tente outro serviço ou profissional.
+            Não há fila aberta para hoje. Entre em contato com o estabelecimento.
           </p>
         )}
 
