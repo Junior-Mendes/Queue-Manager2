@@ -32,7 +32,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         throw new Error(data.error || "Failed to authenticate");
       }
 
-      onLogin(data.user, data.token);
+      onLogin({ ...data.user, mustChangePassword: data.user.mustChangePassword || false }, data.token);
     } catch (err: any) {
       setError(err.message || "An error occurred");
     } finally {

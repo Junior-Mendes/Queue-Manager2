@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { tenantsTable } from "@workspace/db";
+import { tenantsTable, tenantUsersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import bcrypt from "bcrypt";
 import {
   ListTenantsQueryParams,
   CreateTenantBody,
@@ -12,6 +13,16 @@ import {
 import { requireAuth, loadUserContext, requireRole, requireTenant } from "../middlewares/auth";
 
 const router = Router();
+const SALT_ROUNDS = 10;
+
+function generateTempPassword(length = 12): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
 // Tenant CRUD: super_admin for list/create/status; tenant_admin for own tenant
 router.get("/tenants", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
@@ -31,11 +42,27 @@ router.get("/tenants", requireAuth, loadUserContext, requireRole("super_admin"),
 router.post("/tenants", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const body = CreateTenantBody.parse(req.body);
+
+    // Create tenant
     const [tenant] = await db.insert(tenantsTable).values({
       ...body,
       ownerClerkId: req.userId!,
     }).returning();
-    return res.status(201).json(tenant);
+
+    // Generate initial admin user for the tenant
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, SALT_ROUNDS);
+
+    await db.insert(tenantUsersTable).values({
+      tenantId: tenant.id,
+      email: body.email,
+      passwordHash,
+      name: body.name,
+      role: "tenant_admin",
+      mustChangePassword: new Date(), // must change on first login
+    });
+
+    return res.status(201).json({ ...tenant, tempPassword });
   } catch (err) { return next(err); }
 });
 

@@ -86,7 +86,17 @@ router.post("/auth/tenant/login", async (req, res, next) => {
     if (!valid) return res.status(401).json({ error: "Invalid email or password" });
 
     const token = signTenantToken(user.id, user.tenantId, user.role);
-    return res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, tenantId: user.tenantId } });
+    return res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tenantId: user.tenantId,
+        mustChangePassword: Boolean(user.mustChangePassword),
+      },
+    });
   } catch (err) { return next(err); }
 });
 
@@ -114,10 +124,56 @@ router.get("/auth/me", async (req, res, next) => {
     if (payload.type === "tenant") {
       const user = await db.query.tenantUsersTable.findFirst({ where: eq(tenantUsersTable.id, payload.sub) });
       if (!user) return res.status(401).json({ error: "User not found" });
-      return res.json({ id: user.id, email: user.email, name: user.name, role: user.role, tenantId: user.tenantId });
+      return res.json({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tenantId: user.tenantId,
+        mustChangePassword: Boolean(user.mustChangePassword),
+      });
     }
 
     return res.status(401).json({ error: "Unknown token type" });
+  } catch (err) { return next(err); }
+});
+
+// ── Tenant change password (required on first login) ──────────────────────
+
+const ChangePasswordBody = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(6),
+});
+
+router.post("/auth/tenant/change-password", async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
+
+    const token = authHeader.slice(7);
+    let payload: any;
+    try {
+      payload = jwt.verify(token, JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+    if (payload.type !== "tenant") return res.status(403).json({ error: "Forbidden" });
+
+    const body = ChangePasswordBody.parse(req.body);
+    const user = await db.query.tenantUsersTable.findFirst({
+      where: eq(tenantUsersTable.id, payload.sub),
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const valid = await bcrypt.compare(body.currentPassword, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: "Current password is incorrect" });
+
+    const newHash = await bcrypt.hash(body.newPassword, SALT_ROUNDS);
+    await db.update(tenantUsersTable)
+      .set({ passwordHash: newHash, mustChangePassword: null })
+      .where(eq(tenantUsersTable.id, user.id));
+
+    return res.json({ message: "Password changed successfully" });
   } catch (err) { return next(err); }
 });
 
