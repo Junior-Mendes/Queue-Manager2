@@ -15,7 +15,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -28,7 +27,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, FileText, AlertCircle } from "lucide-react";
 
 const emptyPlan: CreatePlanInput = {
   name: "",
@@ -43,7 +42,7 @@ const emptyPlan: CreatePlanInput = {
 
 export default function PlansPage() {
   const queryClient = useQueryClient();
-  const { data: plans, isLoading } = useListPlans({});
+  const { data: plans, isLoading, error: listError } = useListPlans({});
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -81,6 +80,7 @@ export default function PlansPage() {
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyPlan);
+    createPlan.reset();
     setIsOpen(true);
   };
 
@@ -96,16 +96,20 @@ export default function PlansPage() {
       price: plan.price,
       status: plan.status,
     });
+    updatePlan.reset();
     setIsOpen(true);
   };
 
   const handleSubmit = () => {
+    if (!form.name.trim() || !form.slug.trim()) return;
     if (editingId) {
       updatePlan.mutate({ id: editingId, data: form });
     } else {
       createPlan.mutate({ data: form });
     }
   };
+
+  const mutationError = editingId ? updatePlan.error : createPlan.error;
 
   const statusColors: Record<string, string> = {
     active: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100",
@@ -124,6 +128,13 @@ export default function PlansPage() {
           New Plan
         </Button>
       </div>
+
+      {listError && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>Failed to load plans: {(listError as Error).message}</span>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -222,7 +233,7 @@ export default function PlansPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if (!open) { createPlan.reset(); updatePlan.reset(); } }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Plan" : "Create Plan"}</DialogTitle>
@@ -231,21 +242,27 @@ export default function PlansPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {mutationError && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{(mutationError as Error).message}</span>
+              </div>
+            )}
             <div className="grid gap-2">
-              <Label htmlFor="plan-name">Name</Label>
+              <Label htmlFor="plan-name">Name <span className="text-destructive">*</span></Label>
               <Input
                 id="plan-name"
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onChange={(e) => setForm({ ...form, name: e.target.value, slug: form.slug || e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") })}
                 placeholder="e.g. Professional"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="plan-slug">Slug</Label>
+              <Label htmlFor="plan-slug">Slug <span className="text-destructive">*</span></Label>
               <Input
                 id="plan-slug"
                 value={form.slug}
-                onChange={(e) => setForm({ ...form, slug: e.target.value })}
+                onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") })}
                 placeholder="e.g. professional"
               />
             </div>
@@ -264,6 +281,7 @@ export default function PlansPage() {
                 <Input
                   id="plan-biz"
                   type="number"
+                  min="1"
                   value={form.maxBusinesses}
                   onChange={(e) => setForm({ ...form, maxBusinesses: Number(e.target.value) })}
                 />
@@ -273,6 +291,7 @@ export default function PlansPage() {
                 <Input
                   id="plan-ops"
                   type="number"
+                  min="1"
                   value={form.maxOperators}
                   onChange={(e) => setForm({ ...form, maxOperators: Number(e.target.value) })}
                 />
@@ -282,6 +301,7 @@ export default function PlansPage() {
                 <Input
                   id="plan-queues"
                   type="number"
+                  min="1"
                   value={form.maxQueuesPerDay}
                   onChange={(e) => setForm({ ...form, maxQueuesPerDay: Number(e.target.value) })}
                 />
@@ -294,6 +314,7 @@ export default function PlansPage() {
                   id="plan-price"
                   type="number"
                   step="0.01"
+                  min="0"
                   value={form.price}
                   onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
                 />
@@ -316,7 +337,10 @@ export default function PlansPage() {
             <Button variant="outline" onClick={() => setIsOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={createPlan.isPending || updatePlan.isPending}>
+            <Button
+              onClick={handleSubmit}
+              disabled={!form.name.trim() || !form.slug.trim() || createPlan.isPending || updatePlan.isPending}
+            >
               {editingId ? "Save Changes" : "Create Plan"}
             </Button>
           </DialogFooter>
