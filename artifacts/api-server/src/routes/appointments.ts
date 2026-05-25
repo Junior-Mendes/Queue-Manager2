@@ -11,6 +11,7 @@ import {
   GetAvailableSlotsQueryParams,
 } from "@workspace/api-zod";
 import { requireAuth, loadUserContext, requireRole, requireTenant } from "../middlewares/auth";
+import { broadcastAppointmentUpdate } from "../lib/wsManager";
 import { z } from "zod";
 
 const router = Router();
@@ -48,18 +49,25 @@ router.get("/appointments/available-slots", async (req, res, next) => {
     const startHour = 8;
     const endHour = 18;
     const intervalMinutes = 30;
-    const startOfDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0);
-    const endOfDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 23, 59, 59);
-    const existing = await db.select().from(appointmentsTable)
-      .where(and(
-        eq(appointmentsTable.businessId, businessId),
-        gte(appointmentsTable.scheduledAt, startOfDay),
-        lte(appointmentsTable.scheduledAt, endOfDay),
-      ));
-    const taken = new Set(existing.map(a => {
-      const d = new Date(a.scheduledAt);
-      return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-    }));
+    const start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0);
+    const end = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 23, 59, 59);
+    let cond: any = and(
+      eq(appointmentsTable.businessId, businessId),
+      gte(appointmentsTable.scheduledAt, start),
+      lte(appointmentsTable.scheduledAt, end),
+    );
+    if (professionalId) {
+      cond = and(cond, eq(appointmentsTable.professionalId, professionalId));
+    }
+    const existing = await db.select().from(appointmentsTable).where(cond);
+    const taken = new Set(
+      existing
+        .filter(a => a.status !== "cancelled" && a.status !== "no_show")
+        .map(a => {
+          const d = new Date(a.scheduledAt);
+          return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+        })
+    );
     for (let h = startHour; h < endHour; h++) {
       for (let m = 0; m < 60; m += intervalMinutes) {
         const time = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
@@ -70,6 +78,7 @@ router.get("/appointments/available-slots", async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
+// Anonymous clients can book appointments
 router.post("/appointments", async (req, res, next) => {
   try {
     const body = CreateAppointmentBody.parse(req.body);
@@ -108,6 +117,7 @@ router.patch("/appointments/:id", async (req, res, next) => {
     if (body.status === "done") updateData.finishedAt = new Date();
     if (body.status === "cancelled") updateData.cancelReason = body.cancelReason || "Cancelled by client";
     const [updated] = await db.update(appointmentsTable).set(updateData).where(eq(appointmentsTable.id, params.id)).returning();
+    broadcastAppointmentUpdate(params.id, updated);
     return res.json(updated);
   } catch (err) { return next(err); }
 });

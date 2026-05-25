@@ -11,6 +11,7 @@ import {
   UpdateQueueEntryStatusBody,
 } from "@workspace/api-zod";
 import { requireAuth, loadUserContext, requireRole, requireTenant } from "../middlewares/auth";
+import { broadcastQueueEntryUpdate, broadcastQueueUpdate } from "../lib/wsManager";
 import { z } from "zod";
 
 const router = Router();
@@ -47,6 +48,7 @@ router.post("/queues/:queueId/entries", async (req, res, next) => {
       ticketNumber,
     }).returning();
     await db.update(queuesTable).set({ lastTicket: ticketNumber }).where(eq(queuesTable.id, queueId));
+    broadcastQueueUpdate(queueId, { event: "entry_added", entryId: entry.id });
     return res.status(201).json(entry);
   } catch (err) { return next(err); }
 });
@@ -74,7 +76,7 @@ router.get("/queues/:queueId/entries/:id", async (req, res, next) => {
 // Anonymous clients can cancel their own entry
 router.patch("/queues/:queueId/entries/:id", async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const { queueId, id } = req.params;
     const body = UpdateQueueEntryStatusBody.parse(req.body);
     const entry = await db.select().from(queueEntriesTable).where(eq(queueEntriesTable.id, id as string)).then(r => r[0]);
     if (!entry) return res.status(404).json({ error: "Not found" });
@@ -84,6 +86,8 @@ router.patch("/queues/:queueId/entries/:id", async (req, res, next) => {
     if (body.status === "cancelled") updateData.finishedAt = new Date();
     if (body.notes) updateData.notes = body.notes;
     const [updated] = await db.update(queueEntriesTable).set(updateData).where(eq(queueEntriesTable.id, id as string)).returning();
+    broadcastQueueEntryUpdate(queueId, id, updated);
+    broadcastQueueUpdate(queueId, { event: "entry_updated", entryId: id });
     return res.json(updated);
   } catch (err) { return next(err); }
 });
