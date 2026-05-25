@@ -18,7 +18,7 @@ const router = Router();
 router.get("/businesses", requireAuth, loadUserContext, requireRole("tenant_admin", "super_admin"), requireTenant, async (req, res, next) => {
   try {
     const businesses = await db.select().from(businessesTable).where(eq(businessesTable.tenantId, req.tenantId!));
-    return res.json(z.array(ListBusinessesResponse).parse(businesses));
+    return res.json(businesses);
   } catch (err) { return next(err); }
 });
 

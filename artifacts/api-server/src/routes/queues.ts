@@ -25,7 +25,7 @@ router.get("/queues", requireAuth, loadUserContext, requireRole("tenant_admin", 
       eq(queuesTable.tenantId, req.tenantId!),
     );
     const queues = await db.select().from(queuesTable).where(conditions);
-    return res.json(z.array(ListQueuesResponse).parse(queues));
+    return res.json(queues);
   } catch (err) { return next(err); }
 });
 

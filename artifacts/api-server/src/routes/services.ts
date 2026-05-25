@@ -19,7 +19,7 @@ router.get("/businesses/:businessId/services", requireAuth, loadUserContext, req
     const params = ListServicesParams.parse(req.params);
     const services = await db.select().from(servicesTable)
       .where(and(eq(servicesTable.businessId, params.businessId as string), eq(servicesTable.tenantId, req.tenantId!)));
-    return res.json(z.array(ListServicesResponse).parse(services));
+    return res.json(services);
   } catch (err) { return next(err); }
 });
 

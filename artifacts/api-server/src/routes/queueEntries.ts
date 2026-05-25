@@ -28,7 +28,7 @@ router.get("/queues/:queueId/entries", requireAuth, loadUserContext, requireRole
       conditions = and(conditions, eq(queueEntriesTable.status, query.data.status as any));
     }
     const entries = await db.select().from(queueEntriesTable).where(conditions).orderBy(asc(queueEntriesTable.ticketNumber));
-    return res.json(z.array(ListQueueEntriesResponse).parse(entries));
+    return res.json(entries);
   } catch (err) { return next(err); }
 });
 
