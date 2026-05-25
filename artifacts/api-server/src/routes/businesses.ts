@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { businessesTable, servicesTable, professionalsTable } from "@workspace/db";
+import { businessesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import {
   ListBusinessesResponse,

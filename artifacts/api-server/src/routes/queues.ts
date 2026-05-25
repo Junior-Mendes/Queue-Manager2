@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { queuesTable, queueEntriesTable, professionalsTable } from "@workspace/db";
-import { eq, and, asc, count, sql, gte } from "drizzle-orm";
+import { queuesTable, queueEntriesTable, businessesTable } from "@workspace/db";
+import { eq, and, asc } from "drizzle-orm";
 import {
   ListQueuesQueryParams,
   ListQueuesResponse,
@@ -31,6 +31,9 @@ router.get("/queues", requireAuth, loadUserContext, requireTenant, async (req, r
 router.post("/queues", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
   try {
     const body = CreateQueueBody.parse(req.body);
+    // Verify business belongs to the tenant
+    const business = await db.select().from(businessesTable).where(and(eq(businessesTable.id, body.businessId), eq(businessesTable.tenantId, req.tenantId!))).then(r => r[0]);
+    if (!business) return res.status(403).json({ error: "Business does not belong to tenant" });
     const [queue] = await db.insert(queuesTable).values({
       ...body,
       tenantId: req.tenantId!,
@@ -39,10 +42,10 @@ router.post("/queues", requireAuth, loadUserContext, requireTenant, async (req, 
   } catch (err) { return next(err); }
 });
 
-router.get("/queues/:id", async (req, res, next) => {
+router.get("/queues/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
   try {
     const params = GetQueueParams.parse({ id: req.params.id });
-    const queue = await db.select().from(queuesTable).where(eq(queuesTable.id, params.id)).then(r => r[0]);
+    const queue = await db.select().from(queuesTable).where(and(eq(queuesTable.id, params.id), eq(queuesTable.tenantId, req.tenantId!))).then(r => r[0]);
     if (!queue) return res.status(404).json({ error: "Not found" });
     const entries = await db.select().from(queueEntriesTable)
       .where(and(eq(queueEntriesTable.queueId, params.id), eq(queueEntriesTable.status, "waiting")))
