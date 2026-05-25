@@ -15,11 +15,14 @@ import { z } from "zod";
 
 const router = Router();
 
-router.get("/queues/:queueId/entries", async (req, res, next) => {
+router.get("/queues/:queueId/entries", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
   try {
     const params = ListQueueEntriesParams.parse({ queueId: req.params.queueId });
+    // Verify queue belongs to tenant
+    const queue = await db.select().from(queuesTable).where(and(eq(queuesTable.id, params.queueId), eq(queuesTable.tenantId, req.tenantId!))).then(r => r[0]);
+    if (!queue) return res.status(404).json({ error: "Queue not found" });
     const query = ListQueueEntriesQueryParams.safeParse(req.query);
-    let conditions: any = eq(queueEntriesTable.queueId, params.queueId);
+    let conditions: any = and(eq(queueEntriesTable.queueId, params.queueId), eq(queueEntriesTable.tenantId, req.tenantId!));
     if (query.success && query.data.status) {
       conditions = and(conditions, eq(queueEntriesTable.status, query.data.status as any));
     }
@@ -47,10 +50,10 @@ router.post("/queues/:queueId/entries", async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.get("/queues/:queueId/entries/:id", async (req, res, next) => {
+router.get("/queues/:queueId/entries/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const entry = await db.select().from(queueEntriesTable).where(eq(queueEntriesTable.id, id)).then(r => r[0]);
+    const entry = await db.select().from(queueEntriesTable).where(and(eq(queueEntriesTable.id, id as string), eq(queueEntriesTable.tenantId, req.tenantId!))).then(r => r[0]);
     if (!entry) return res.status(404).json({ error: "Not found" });
     return res.json(entry);
   } catch (err) { return next(err); }

@@ -1,11 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { tenantsTable, plansTable, businessesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { tenantsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import {
   ListTenantsQueryParams,
   CreateTenantBody,
-  GetMyTenantResponse,
   GetTenantParams,
   UpdateTenantBody,
   UpdateTenantStatusBody,
@@ -28,7 +27,7 @@ router.get("/tenants", requireAuth, loadUserContext, requireRole("super_admin"),
   } catch (err) { return next(err); }
 });
 
-router.post("/tenants", requireAuth, loadUserContext, async (req, res, next) => {
+router.post("/tenants", requireAuth, loadUserContext, requireRole("super_admin"), async (req, res, next) => {
   try {
     const body = CreateTenantBody.parse(req.body);
     const [tenant] = await db.insert(tenantsTable).values({
@@ -47,11 +46,12 @@ router.get("/tenants/me", requireAuth, loadUserContext, requireTenant, async (re
   } catch (err) { return next(err); }
 });
 
-router.get("/tenants/:id", requireAuth, loadUserContext, async (req, res, next) => {
+router.get("/tenants/:id", requireAuth, loadUserContext, requireRole("super_admin", "tenant_admin"), async (req, res, next) => {
   try {
     const params = GetTenantParams.parse({ id: req.params.id });
     const tenant = await db.select().from(tenantsTable).where(eq(tenantsTable.id, params.id)).then(r => r[0]);
     if (!tenant) return res.status(404).json({ error: "Not found" });
+    // tenant_admin can only see their own tenant
     if (req.role === "tenant_admin" && tenant.id !== req.tenantId) {
       return res.status(403).json({ error: "Forbidden" });
     }
@@ -59,7 +59,7 @@ router.get("/tenants/:id", requireAuth, loadUserContext, async (req, res, next) 
   } catch (err) { return next(err); }
 });
 
-router.put("/tenants/:id", requireAuth, loadUserContext, async (req, res, next) => {
+router.put("/tenants/:id", requireAuth, loadUserContext, requireRole("super_admin", "tenant_admin"), async (req, res, next) => {
   try {
     const params = GetTenantParams.parse({ id: req.params.id });
     const body = UpdateTenantBody.parse(req.body);

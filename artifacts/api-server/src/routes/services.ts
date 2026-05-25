@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { servicesTable } from "@workspace/db";
+import { servicesTable, businessesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import {
   ListServicesParams,
@@ -25,6 +25,9 @@ router.get("/businesses/:businessId/services", requireAuth, loadUserContext, req
 router.post("/businesses/:businessId/services", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
   try {
     const { businessId } = req.params;
+    // Verify business belongs to the tenant
+    const business = await db.select().from(businessesTable).where(and(eq(businessesTable.id, businessId as string), eq(businessesTable.tenantId, req.tenantId!))).then(r => r[0]);
+    if (!business) return res.status(403).json({ error: "Business does not belong to tenant" });
     const body = CreateServiceBody.parse(req.body);
     const [service] = await db.insert(servicesTable).values({
       ...body,

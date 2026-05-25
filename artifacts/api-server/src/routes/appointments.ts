@@ -38,47 +38,6 @@ router.get("/appointments", requireAuth, loadUserContext, requireTenant, async (
   } catch (err) { return next(err); }
 });
 
-router.post("/appointments", async (req, res, next) => {
-  try {
-    const body = CreateAppointmentBody.parse(req.body);
-    // Derive tenantId from business lookup — never trust client body
-    const business = await db.select().from(businessesTable).where(eq(businessesTable.id, body.businessId)).then(r => r[0]);
-    if (!business) return res.status(404).json({ error: "Business not found" });
-    const insertData: any = {
-      ...body,
-      tenantId: business.tenantId,
-      scheduledAt: new Date(body.scheduledAt),
-    };
-    const [appointment] = await db.insert(appointmentsTable).values(insertData).returning();
-    return res.status(201).json(appointment);
-  } catch (err) { return next(err); }
-});
-
-router.get("/appointments/:id", async (req, res, next) => {
-  try {
-    const params = GetAppointmentParams.parse({ id: req.params.id });
-    const appointment = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, params.id)).then(r => r[0]);
-    if (!appointment) return res.status(404).json({ error: "Not found" });
-    return res.json(appointment);
-  } catch (err) { return next(err); }
-});
-
-router.patch("/appointments/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
-  try {
-    const params = GetAppointmentParams.parse({ id: req.params.id });
-    const body = UpdateAppointmentStatusBody.parse(req.body);
-    const appointment = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.id), eq(appointmentsTable.tenantId, req.tenantId!))).then(r => r[0]);
-    if (!appointment) return res.status(404).json({ error: "Not found" });
-    const updateData: any = { status: body.status };
-    if (body.status === "confirmed") updateData.confirmedAt = new Date();
-    if (body.status === "in_service") updateData.startedAt = new Date();
-    if (body.status === "done") updateData.finishedAt = new Date();
-    if (body.cancelReason) updateData.cancelReason = body.cancelReason;
-    const [updated] = await db.update(appointmentsTable).set(updateData).where(eq(appointmentsTable.id, params.id)).returning();
-    return res.json(updated);
-  } catch (err) { return next(err); }
-});
-
 router.get("/appointments/available-slots", async (req, res, next) => {
   try {
     const query = GetAvailableSlotsQueryParams.parse(req.query);
@@ -107,6 +66,46 @@ router.get("/appointments/available-slots", async (req, res, next) => {
       }
     }
     return res.json(daySlots);
+  } catch (err) { return next(err); }
+});
+
+router.post("/appointments", async (req, res, next) => {
+  try {
+    const body = CreateAppointmentBody.parse(req.body);
+    const business = await db.select().from(businessesTable).where(eq(businessesTable.id, body.businessId)).then(r => r[0]);
+    if (!business) return res.status(404).json({ error: "Business not found" });
+    const insertData: any = {
+      ...body,
+      tenantId: business.tenantId,
+      scheduledAt: new Date(body.scheduledAt),
+    };
+    const [appointment] = await db.insert(appointmentsTable).values(insertData).returning();
+    return res.status(201).json(appointment);
+  } catch (err) { return next(err); }
+});
+
+router.get("/appointments/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+  try {
+    const params = GetAppointmentParams.parse({ id: req.params.id });
+    const appointment = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.id), eq(appointmentsTable.tenantId, req.tenantId!))).then(r => r[0]);
+    if (!appointment) return res.status(404).json({ error: "Not found" });
+    return res.json(appointment);
+  } catch (err) { return next(err); }
+});
+
+router.patch("/appointments/:id", requireAuth, loadUserContext, requireTenant, async (req, res, next) => {
+  try {
+    const params = GetAppointmentParams.parse({ id: req.params.id });
+    const body = UpdateAppointmentStatusBody.parse(req.body);
+    const appointment = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.id), eq(appointmentsTable.tenantId, req.tenantId!))).then(r => r[0]);
+    if (!appointment) return res.status(404).json({ error: "Not found" });
+    const updateData: any = { status: body.status };
+    if (body.status === "confirmed") updateData.confirmedAt = new Date();
+    if (body.status === "in_service") updateData.startedAt = new Date();
+    if (body.status === "done") updateData.finishedAt = new Date();
+    if (body.cancelReason) updateData.cancelReason = body.cancelReason;
+    const [updated] = await db.update(appointmentsTable).set(updateData).where(eq(appointmentsTable.id, params.id)).returning();
+    return res.json(updated);
   } catch (err) { return next(err); }
 });
 
