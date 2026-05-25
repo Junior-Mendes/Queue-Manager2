@@ -1,4 +1,4 @@
-import { getAuth } from "@clerk/express";
+import { getAuth, createClerkClient } from "@clerk/express";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -26,13 +26,38 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void | Re
   next();
 }
 
+let _clerkBackend: ReturnType<typeof createClerkClient> | null = null;
+function getClerkBackend() {
+  if (!_clerkBackend && process.env.CLERK_SECRET_KEY) {
+    _clerkBackend = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+  }
+  return _clerkBackend;
+}
+
 async function loadUserContext(req: Request, _res: Response, next: NextFunction) {
   if (!req.userId) return next();
 
   const auth = getAuth(req);
   const metadata = (auth?.sessionClaims as any)?.metadata ?? {};
-  const role = metadata?.role;
-  const tenantId = metadata?.tenantId;
+  let role = metadata?.role;
+  let tenantId = metadata?.tenantId;
+  let businessId = metadata?.businessId;
+
+  // When claims are empty (e.g. raw session token without metadata), query Clerk backend
+  if (!role && !tenantId) {
+    try {
+      const clerk = getClerkBackend();
+      if (clerk) {
+        const user = await clerk.users.getUser(req.userId);
+        const md = user.publicMetadata as any;
+        if (md?.role) role = md.role;
+        if (md?.tenantId) tenantId = md.tenantId;
+        if (md?.businessId) businessId = md.businessId;
+      }
+    } catch {
+      // Clerk lookup failed — keep whatever we have and fall through
+    }
+  }
 
   if (role === "super_admin") {
     req.role = "super_admin";
@@ -48,7 +73,6 @@ async function loadUserContext(req: Request, _res: Response, next: NextFunction)
   if (role === "operator" && tenantId) {
     req.role = "operator";
     req.tenantId = tenantId;
-    const businessId = metadata?.businessId;
     if (businessId) req.businessId = businessId;
     return next();
   }
