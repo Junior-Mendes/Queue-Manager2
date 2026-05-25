@@ -18,7 +18,7 @@ const router = Router();
 router.get("/plans", requireAuth, loadUserContext, requireRole("super_admin"), async (_req, res, next) => {
   try {
     const plans = await db.select().from(plansTable);
-    return res.json(z.array(ListPlansResponse).parse(plans));
+    return res.json(plans);
   } catch (err) { return next(err); }
 });
 

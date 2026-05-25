@@ -3,7 +3,7 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
 
 import { Layout } from "@/components/layout";
 import LoginPage from "@/pages/login";
@@ -20,10 +20,6 @@ const queryClient = new QueryClient({
 });
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
-
-// Configure API client base URL so /api hits the correct server
-setBaseUrl(API_BASE);
 
 type User = { id: string; email: string; name: string; role: string };
 
