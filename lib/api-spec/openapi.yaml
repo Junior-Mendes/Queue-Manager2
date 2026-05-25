@@ -1,22 +1,41 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Queue & Appointment SaaS API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: plans
+    description: SaaS plan management (super admin)
+  - name: tenants
+    description: Tenant management (super admin)
+  - name: businesses
+    description: Business/unit management
+  - name: services
+    description: Service management
+  - name: professionals
+    description: Professional management
+  - name: queues
+    description: Queue management
+  - name: queue-entries
+    description: Queue entry management
+  - name: appointments
+    description: Appointment management
+  - name: public
+    description: Public endpoints (anonymous client access)
+  - name: stats
+    description: Statistics and dashboard data
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +43,898 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── Plans ───────────────────────────────────────────────────────────────────
+  /plans:
+    get:
+      operationId: listPlans
+      tags: [plans]
+      summary: List all SaaS plans
+      responses:
+        "200":
+          description: List of plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+    post:
+      operationId: createPlan
+      tags: [plans]
+      summary: Create a new SaaS plan (super admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlanInput"
+      responses:
+        "201":
+          description: Created plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+
+  /plans/{id}:
+    get:
+      operationId: getPlan
+      tags: [plans]
+      summary: Get plan by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+    put:
+      operationId: updatePlan
+      tags: [plans]
+      summary: Update plan (super admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlanInput"
+      responses:
+        "200":
+          description: Updated plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+    delete:
+      operationId: deletePlan
+      tags: [plans]
+      summary: Delete plan (super admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── Tenants ─────────────────────────────────────────────────────────────────
+  /tenants:
+    get:
+      operationId: listTenants
+      tags: [tenants]
+      summary: List all tenants (super admin)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: planId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tenants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tenant"
+    post:
+      operationId: createTenant
+      tags: [tenants]
+      summary: Create a new tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantInput"
+      responses:
+        "201":
+          description: Created tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+  /tenants/me:
+    get:
+      operationId: getMyTenant
+      tags: [tenants]
+      summary: Get the current user's tenant
+      responses:
+        "200":
+          description: Current tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+  /tenants/{id}:
+    get:
+      operationId: getTenant
+      tags: [tenants]
+      summary: Get tenant by ID (super admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+    put:
+      operationId: updateTenant
+      tags: [tenants]
+      summary: Update tenant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantInput"
+      responses:
+        "200":
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+  /tenants/{id}/status:
+    patch:
+      operationId: updateTenantStatus
+      tags: [tenants]
+      summary: Update tenant status (super admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantStatusInput"
+      responses:
+        "200":
+          description: Updated tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+  # ─── Businesses ──────────────────────────────────────────────────────────────
+  /businesses:
+    get:
+      operationId: listBusinesses
+      tags: [businesses]
+      summary: List businesses for current tenant
+      responses:
+        "200":
+          description: List of businesses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Business"
+    post:
+      operationId: createBusiness
+      tags: [businesses]
+      summary: Create a business
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBusinessInput"
+      responses:
+        "201":
+          description: Created business
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+
+  /businesses/{id}:
+    get:
+      operationId: getBusiness
+      tags: [businesses]
+      summary: Get business by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Business
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+    put:
+      operationId: updateBusiness
+      tags: [businesses]
+      summary: Update business
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBusinessInput"
+      responses:
+        "200":
+          description: Updated business
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+    delete:
+      operationId: deleteBusiness
+      tags: [businesses]
+      summary: Delete business
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── Services ─────────────────────────────────────────────────────────────────
+  /businesses/{businessId}/services:
+    get:
+      operationId: listServices
+      tags: [services]
+      summary: List services for a business
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+    post:
+      operationId: createService
+      tags: [services]
+      summary: Create a service
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceInput"
+      responses:
+        "201":
+          description: Created service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+
+  /businesses/{businessId}/services/{id}:
+    put:
+      operationId: updateService
+      tags: [services]
+      summary: Update service
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceInput"
+      responses:
+        "200":
+          description: Updated service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+    delete:
+      operationId: deleteService
+      tags: [services]
+      summary: Delete service
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── Professionals ───────────────────────────────────────────────────────────
+  /businesses/{businessId}/professionals:
+    get:
+      operationId: listProfessionals
+      tags: [professionals]
+      summary: List professionals for a business
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of professionals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Professional"
+    post:
+      operationId: createProfessional
+      tags: [professionals]
+      summary: Create a professional
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProfessionalInput"
+      responses:
+        "201":
+          description: Created professional
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Professional"
+
+  /businesses/{businessId}/professionals/{id}:
+    put:
+      operationId: updateProfessional
+      tags: [professionals]
+      summary: Update professional
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProfessionalInput"
+      responses:
+        "200":
+          description: Updated professional
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Professional"
+    delete:
+      operationId: deleteProfessional
+      tags: [professionals]
+      summary: Delete professional
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ─── Queues ──────────────────────────────────────────────────────────────────
+  /queues:
+    get:
+      operationId: listQueues
+      tags: [queues]
+      summary: List queues for a business/date
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of queues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Queue"
+    post:
+      operationId: createQueue
+      tags: [queues]
+      summary: Open a queue for today
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQueueInput"
+      responses:
+        "201":
+          description: Created queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Queue"
+
+  /queues/{id}:
+    get:
+      operationId: getQueue
+      tags: [queues]
+      summary: Get queue details with live entries
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Queue with entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueWithEntries"
+
+  /queues/{id}/status:
+    patch:
+      operationId: updateQueueStatus
+      tags: [queues]
+      summary: Open, pause or close queue
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQueueStatusInput"
+      responses:
+        "200":
+          description: Updated queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Queue"
+
+  /queues/{id}/call-next:
+    post:
+      operationId: callNext
+      tags: [queues]
+      summary: Call the next client in queue
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Called entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueEntry"
+
+  # ─── Queue Entries ────────────────────────────────────────────────────────────
+  /queues/{queueId}/entries:
+    get:
+      operationId: listQueueEntries
+      tags: [queue-entries]
+      summary: List entries for a queue
+      parameters:
+        - name: queueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QueueEntry"
+    post:
+      operationId: joinQueue
+      tags: [queue-entries]
+      summary: Join queue (anonymous)
+      parameters:
+        - name: queueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinQueueInput"
+      responses:
+        "201":
+          description: Queue entry created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueEntry"
+
+  /queues/{queueId}/entries/{id}:
+    get:
+      operationId: getQueueEntry
+      tags: [queue-entries]
+      summary: Get queue entry status
+      parameters:
+        - name: queueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Queue entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueEntry"
+    patch:
+      operationId: updateQueueEntryStatus
+      tags: [queue-entries]
+      summary: Update entry status (done, no_show, cancelled)
+      parameters:
+        - name: queueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEntryStatusInput"
+      responses:
+        "200":
+          description: Updated entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueEntry"
+
+  # ─── Appointments ─────────────────────────────────────────────────────────────
+  /appointments:
+    get:
+      operationId: listAppointments
+      tags: [appointments]
+      summary: List appointments
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: query
+          schema:
+            type: string
+        - name: professionalId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+    post:
+      operationId: createAppointment
+      tags: [appointments]
+      summary: Create an appointment (anonymous)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAppointmentInput"
+      responses:
+        "201":
+          description: Created appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+
+  /appointments/{id}:
+    get:
+      operationId: getAppointment
+      tags: [appointments]
+      summary: Get appointment details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+    patch:
+      operationId: updateAppointmentStatus
+      tags: [appointments]
+      summary: Update appointment status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAppointmentStatusInput"
+      responses:
+        "200":
+          description: Updated appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+
+  /appointments/available-slots:
+    get:
+      operationId: getAvailableSlots
+      tags: [appointments]
+      summary: Get available time slots for booking
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: serviceId
+          in: query
+          schema:
+            type: string
+        - name: professionalId
+          in: query
+          schema:
+            type: string
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeSlot"
+
+  # ─── Public endpoints ─────────────────────────────────────────────────────────
+  /public/businesses/{slug}:
+    get:
+      operationId: getPublicBusiness
+      tags: [public]
+      summary: Get business by slug (public, no auth)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Business info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicBusiness"
+
+  /public/businesses/{slug}/queues:
+    get:
+      operationId: getPublicQueues
+      tags: [public]
+      summary: Get open queues for a business (public)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Open queues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Queue"
+
+  # ─── Stats ───────────────────────────────────────────────────────────────────
+  /stats/saas:
+    get:
+      operationId: getSaasStats
+      tags: [stats]
+      summary: Global SaaS stats (super admin)
+      responses:
+        "200":
+          description: SaaS-wide stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaasStats"
+
+  /stats/tenant:
+    get:
+      operationId: getTenantStats
+      tags: [stats]
+      summary: Stats for current tenant
+      parameters:
+        - name: businessId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tenant stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantStats"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +942,575 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    # ─── Plans ───
+    Plan:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        maxBusinesses:
+          type: integer
+        maxOperators:
+          type: integer
+        maxQueuesPerDay:
+          type: integer
+        price:
+          type: integer
+        status:
+          type: string
+          enum: [active, inactive]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, name, slug, maxBusinesses, maxOperators, maxQueuesPerDay, price, status, createdAt, updatedAt]
+
+    CreatePlanInput:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        maxBusinesses:
+          type: integer
+        maxOperators:
+          type: integer
+        maxQueuesPerDay:
+          type: integer
+        price:
+          type: integer
+        status:
+          type: string
+          enum: [active, inactive]
+      required: [name, slug, maxBusinesses, maxOperators, maxQueuesPerDay, price]
+
+    # ─── Tenants ───
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        planId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, trial, suspended, cancelled]
+        ownerClerkId:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, name, slug, status, ownerClerkId, email, createdAt, updatedAt]
+
+    CreateTenantInput:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        planId:
+          type: string
+          nullable: true
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+      required: [name, slug, email]
+
+    UpdateTenantInput:
+      type: object
+      properties:
+        name:
+          type: string
+        planId:
+          type: string
+          nullable: true
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+
+    UpdateTenantStatusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, trial, suspended, cancelled]
+      required: [status]
+
+    # ─── Businesses ───
+    Business:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+        address:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        openingHours:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, tenantId, name, slug, category, createdAt, updatedAt]
+
+    CreateBusinessInput:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+        address:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        openingHours:
+          type: string
+          nullable: true
+      required: [name, slug]
+
+    PublicBusiness:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+        address:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        openingHours:
+          type: string
+          nullable: true
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/Service"
+        professionals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Professional"
+      required: [id, name, slug, category, services, professionals]
+
+    # ─── Services ───
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        businessId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        durationMinutes:
+          type: integer
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, tenantId, businessId, name, durationMinutes, isActive, createdAt, updatedAt]
+
+    CreateServiceInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        durationMinutes:
+          type: integer
+        isActive:
+          type: boolean
+      required: [name, durationMinutes]
+
+    # ─── Professionals ───
+    Professional:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        businessId:
+          type: string
+        clerkId:
+          type: string
+          nullable: true
+        name:
+          type: string
+        role:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, tenantId, businessId, name, role, isActive, createdAt, updatedAt]
+
+    CreateProfessionalInput:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        clerkId:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+      required: [name]
+
+    # ─── Queues ───
+    Queue:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        businessId:
+          type: string
+        serviceId:
+          type: string
+          nullable: true
+        professionalId:
+          type: string
+          nullable: true
+        date:
+          type: string
+        status:
+          type: string
+          enum: [open, paused, closed]
+        currentTicket:
+          type: integer
+        lastTicket:
+          type: integer
+        avgWaitMinutes:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, tenantId, businessId, date, status, currentTicket, lastTicket, avgWaitMinutes, createdAt, updatedAt]
+
+    QueueWithEntries:
+      allOf:
+        - $ref: "#/components/schemas/Queue"
+        - type: object
+          properties:
+            entries:
+              type: array
+              items:
+                $ref: "#/components/schemas/QueueEntry"
+          required: [entries]
+
+    CreateQueueInput:
+      type: object
+      properties:
+        businessId:
+          type: string
+        serviceId:
+          type: string
+          nullable: true
+        professionalId:
+          type: string
+          nullable: true
+        date:
+          type: string
+      required: [businessId, date]
+
+    UpdateQueueStatusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [open, paused, closed]
+      required: [status]
+
+    # ─── Queue Entries ───
+    QueueEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        queueId:
+          type: string
+        ticketNumber:
+          type: integer
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+          nullable: true
+        serviceId:
+          type: string
+          nullable: true
+        professionalId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [waiting, called, in_service, done, cancelled, no_show]
+        calledAt:
+          type: string
+          nullable: true
+        servedAt:
+          type: string
+          nullable: true
+        finishedAt:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        waitingAhead:
+          type: integer
+          nullable: true
+        estimatedWaitMinutes:
+          type: integer
+          nullable: true
+      required: [id, tenantId, queueId, ticketNumber, clientName, status, createdAt, updatedAt]
+
+    JoinQueueInput:
+      type: object
+      properties:
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+          nullable: true
+        serviceId:
+          type: string
+          nullable: true
+        professionalId:
+          type: string
+          nullable: true
+      required: [clientName]
+
+    UpdateEntryStatusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [waiting, called, in_service, done, cancelled, no_show]
+        notes:
+          type: string
+          nullable: true
+      required: [status]
+
+    # ─── Appointments ───
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        businessId:
+          type: string
+        serviceId:
+          type: string
+          nullable: true
+        professionalId:
+          type: string
+          nullable: true
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+          nullable: true
+        scheduledAt:
+          type: string
+        status:
+          type: string
+          enum: [scheduled, confirmed, in_service, done, cancelled, no_show]
+        notes:
+          type: string
+          nullable: true
+        cancelReason:
+          type: string
+          nullable: true
+        confirmedAt:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          nullable: true
+        finishedAt:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, tenantId, businessId, clientName, scheduledAt, status, createdAt, updatedAt]
+
+    CreateAppointmentInput:
+      type: object
+      properties:
+        businessId:
+          type: string
+        serviceId:
+          type: string
+          nullable: true
+        professionalId:
+          type: string
+          nullable: true
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+          nullable: true
+        scheduledAt:
+          type: string
+        notes:
+          type: string
+          nullable: true
+      required: [businessId, clientName, scheduledAt]
+
+    UpdateAppointmentStatusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [scheduled, confirmed, in_service, done, cancelled, no_show]
+        cancelReason:
+          type: string
+          nullable: true
+      required: [status]
+
+    TimeSlot:
+      type: object
+      properties:
+        time:
+          type: string
+        available:
+          type: boolean
+        professionalId:
+          type: string
+          nullable: true
+      required: [time, available]
+
+    # ─── Stats ───
+    SaasStats:
+      type: object
+      properties:
+        totalTenants:
+          type: integer
+        activeTenants:
+          type: integer
+        trialTenants:
+          type: integer
+        suspendedTenants:
+          type: integer
+        totalBusinesses:
+          type: integer
+        totalQueuesToday:
+          type: integer
+        totalAppointmentsToday:
+          type: integer
+        totalAppointmentsThisMonth:
+          type: integer
+      required: [totalTenants, activeTenants, trialTenants, suspendedTenants, totalBusinesses, totalQueuesToday, totalAppointmentsToday, totalAppointmentsThisMonth]
+
+    TenantStats:
+      type: object
+      properties:
+        totalBusinesses:
+          type: integer
+        waitingNow:
+          type: integer
+        servedToday:
+          type: integer
+        appointmentsToday:
+          type: integer
+        appointmentsThisWeek:
+          type: integer
+        avgWaitMinutes:
+          type: integer
+        noShowRate:
+          type: number
+      required: [totalBusinesses, waitingNow, servedToday, appointmentsToday, appointmentsThisWeek, avgWaitMinutes, noShowRate]
