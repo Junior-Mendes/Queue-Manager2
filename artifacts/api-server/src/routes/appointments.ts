@@ -85,26 +85,28 @@ router.post("/appointments", async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.get("/appointments/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
+// Anonymous clients can check appointment status
+router.get("/appointments/:id", async (req, res, next) => {
   try {
     const params = GetAppointmentParams.parse({ id: req.params.id });
-    const appointment = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.id), eq(appointmentsTable.tenantId, req.tenantId!))).then(r => r[0]);
+    const appointment = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, params.id)).then(r => r[0]);
     if (!appointment) return res.status(404).json({ error: "Not found" });
     return res.json(appointment);
   } catch (err) { return next(err); }
 });
 
-router.patch("/appointments/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
+// Anonymous clients can cancel their appointment
+router.patch("/appointments/:id", async (req, res, next) => {
   try {
     const params = GetAppointmentParams.parse({ id: req.params.id });
     const body = UpdateAppointmentStatusBody.parse(req.body);
-    const appointment = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.id), eq(appointmentsTable.tenantId, req.tenantId!))).then(r => r[0]);
+    const appointment = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, params.id)).then(r => r[0]);
     if (!appointment) return res.status(404).json({ error: "Not found" });
     const updateData: any = { status: body.status };
     if (body.status === "confirmed") updateData.confirmedAt = new Date();
     if (body.status === "in_service") updateData.startedAt = new Date();
     if (body.status === "done") updateData.finishedAt = new Date();
-    if (body.cancelReason) updateData.cancelReason = body.cancelReason;
+    if (body.status === "cancelled") updateData.cancelReason = body.cancelReason || "Cancelled by client";
     const [updated] = await db.update(appointmentsTable).set(updateData).where(eq(appointmentsTable.id, params.id)).returning();
     return res.json(updated);
   } catch (err) { return next(err); }

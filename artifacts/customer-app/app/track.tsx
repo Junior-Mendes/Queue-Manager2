@@ -1,0 +1,384 @@
+import { useEffect, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import {
+  useGetQueueEntry,
+  useUpdateQueueEntryStatus,
+  useGetAppointment,
+  useUpdateAppointmentStatus,
+} from "@workspace/api-client-react";
+import { useColors } from "@/hooks/useColors";
+import { useActiveSession } from "@/context/ActiveSessionContext";
+import { LoadingState, ErrorState, EmptyState, PrimaryButton, SecondaryButton } from "@/components/ui";
+
+export default function TrackScreen() {
+  const colors = useColors();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { session, clearSession, isLoading: sessionLoading } = useActiveSession();
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+  // Polling interval
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setTick((t) => t + 1), 5000);
+    return () => clearInterval(iv);
+  }, []);
+
+  if (sessionLoading) return <LoadingState message="Loading session..." />;
+
+  if (!session) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top", "left", "right"]}>
+        <View style={[styles.center, { paddingTop: insets.top + 40 }]}>
+          <Feather name="inbox" size={48} color={colors.mutedForeground} />
+          <Text style={[styles.noSessionTitle, { color: colors.foreground }]}>No active session</Text>
+          <Text style={[styles.noSessionDesc, { color: colors.mutedForeground }]}>
+            You have no active queue or appointment.
+          </Text>
+          <PrimaryButton title="Find a Business" onPress={() => router.replace("/")} icon="search" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (session.type === "queue") {
+    return <QueueTracker
+      queueId={session.queueId!}
+      entryId={session.id}
+      businessName={session.businessName}
+      tick={tick}
+      onCancel={() => setShowCancelConfirm(true)}
+      showCancel={showCancelConfirm}
+      setShowCancel={setShowCancelConfirm}
+      onClear={clearSession}
+    />;
+  }
+
+  return <AppointmentTracker
+    appointmentId={session.id}
+    businessName={session.businessName}
+    tick={tick}
+    onCancel={() => setShowCancelConfirm(true)}
+    showCancel={showCancelConfirm}
+    setShowCancel={setShowCancelConfirm}
+    onClear={clearSession}
+  />;
+}
+
+function QueueTracker({
+  queueId,
+  entryId,
+  businessName,
+  tick,
+  onCancel,
+  showCancel,
+  setShowCancel,
+  onClear,
+}: {
+  queueId: string;
+  entryId: string;
+  businessName?: string;
+  tick: number;
+  onCancel: () => void;
+  showCancel: boolean;
+  setShowCancel: (v: boolean) => void;
+  onClear: () => void;
+}) {
+  const colors = useColors();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+
+  const { data: entry, isLoading, error, refetch } = useGetQueueEntry(
+    queueId,
+    entryId,
+    { query: { enabled: !!queueId && !!entryId, queryKey: ["/api/queues/entry", queueId, entryId, tick] } }
+  );
+
+  const cancelMutation = useUpdateQueueEntryStatus();
+
+  const handleCancel = async () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    await cancelMutation.mutateAsync({
+      queueId,
+      id: entryId,
+      data: { status: "cancelled" as any },
+    });
+    await onClear();
+    setShowCancel(false);
+    router.replace("/");
+  };
+
+  if (isLoading) return <LoadingState message="Loading position..." />;
+  if (error) return <ErrorState message="Could not load queue status." onRetry={refetch} />;
+  if (!entry) return <EmptyState icon="inbox" message="Entry not found." />;
+
+  const isCalled = entry.status === "called" || entry.status === "in_service";
+  const isDone = entry.status === "done" || entry.status === "cancelled" || entry.status === "no_show";
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top", "left", "right"]}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + 24,
+          paddingBottom: insets.bottom + 24,
+          paddingHorizontal: 20,
+        }}
+      >
+        <Text style={[styles.trackTitle, { color: colors.foreground }]}>Your Queue</Text>
+        {businessName && <Text style={[styles.trackSub, { color: colors.mutedForeground }]}>{businessName}</Text>}
+
+        <View style={[styles.ticketCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.ticketLabel, { color: colors.mutedForeground }]}>Ticket Number</Text>
+          <Text style={[styles.ticketNumber, { color: colors.primary }]}>#{entry.ticketNumber}</Text>
+        </View>
+
+        {isCalled ? (
+          <View style={[styles.statusBanner, { backgroundColor: colors.success }]}>
+            <Feather name="bell" size={24} color={colors.accentForeground} />
+            <Text style={[styles.statusBannerText, { color: colors.accentForeground }]}>
+              It is your turn!
+            </Text>
+          </View>
+        ) : isDone ? (
+          <View style={[styles.statusBanner, { backgroundColor: colors.muted }]}>
+            <Text style={[styles.statusBannerText, { color: colors.mutedForeground }]}>
+              {entry.status === "done" ? "Service completed" : "Cancelled"}
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.infoRow}>
+              <Feather name="users" size={18} color={colors.primary} />
+              <Text style={[styles.infoText, { color: colors.foreground }]}>
+                {entry.waitingAhead ?? 0} people ahead
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Feather name="clock" size={18} color={colors.primary} />
+              <Text style={[styles.infoText, { color: colors.foreground }]}>
+                Est. wait: {entry.estimatedWaitMinutes ?? 15} min
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {!isDone && (
+          <>
+            {!showCancel ? (
+              <SecondaryButton title="Leave Queue" onPress={onCancel} />
+            ) : (
+              <View style={styles.cancelConfirm}>
+                <Text style={[styles.cancelText, { color: colors.destructive }]}>
+                  Are you sure you want to leave the queue?
+                </Text>
+                <PrimaryButton
+                  title={cancelMutation.isPending ? "Leaving..." : "Yes, Leave Queue"}
+                  onPress={handleCancel}
+                  disabled={cancelMutation.isPending}
+                />
+                <SecondaryButton title="Keep Waiting" onPress={() => setShowCancel(false)} />
+              </View>
+            )}
+          </>
+        )}
+
+        {isDone && (
+          <PrimaryButton title="Done" onPress={() => router.replace("/")} />
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function AppointmentTracker({
+  appointmentId,
+  businessName,
+  tick,
+  onCancel,
+  showCancel,
+  setShowCancel,
+  onClear,
+}: {
+  appointmentId: string;
+  businessName?: string;
+  tick: number;
+  onCancel: () => void;
+  showCancel: boolean;
+  setShowCancel: (v: boolean) => void;
+  onClear: () => void;
+}) {
+  const colors = useColors();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+
+  const { data: appt, isLoading, error, refetch } = useGetAppointment(
+    appointmentId,
+    { query: { enabled: !!appointmentId, queryKey: ["/api/appointments", appointmentId, tick] } }
+  );
+
+  const cancelMutation = useUpdateAppointmentStatus();
+
+  const handleCancel = async () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    await cancelMutation.mutateAsync({
+      id: appointmentId,
+      data: { status: "cancelled" as any },
+    });
+    await onClear();
+    setShowCancel(false);
+    router.replace("/");
+  };
+
+  if (isLoading) return <LoadingState message="Loading appointment..." />;
+  if (error) return <ErrorState message="Could not load appointment." onRetry={refetch} />;
+  if (!appt) return <EmptyState icon="inbox" message="Appointment not found." />;
+
+  const isDone = appt.status === "done" || appt.status === "cancelled" || appt.status === "no_show";
+  const isInService = appt.status === "in_service";
+  const scheduled = new Date(appt.scheduledAt);
+
+  const statusLabel: Record<string, string> = {
+    scheduled: "Scheduled",
+    confirmed: "Confirmed",
+    in_service: "In Service",
+    done: "Completed",
+    cancelled: "Cancelled",
+    no_show: "No Show",
+  };
+  const statusColor: Record<string, string> = {
+    scheduled: colors.warning,
+    confirmed: colors.primary,
+    in_service: colors.success,
+    done: colors.mutedForeground,
+    cancelled: colors.destructive,
+    no_show: colors.destructive,
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top", "left", "right"]}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + 24,
+          paddingBottom: insets.bottom + 24,
+          paddingHorizontal: 20,
+        }}
+      >
+        <Text style={[styles.trackTitle, { color: colors.foreground }]}>Your Appointment</Text>
+        {businessName && <Text style={[styles.trackSub, { color: colors.mutedForeground }]}>{businessName}</Text>}
+
+        <View style={[styles.ticketCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.ticketLabel, { color: colors.mutedForeground }]}>Date & Time</Text>
+          <Text style={[styles.ticketNumber, { color: colors.primary }]}>
+            {scheduled.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            {"  "}
+            {scheduled.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+          </Text>
+        </View>
+
+        <View style={[styles.statusPill, { backgroundColor: statusColor[appt.status] + "20", borderColor: statusColor[appt.status] }]}>
+          <Text style={[styles.statusPillText, { color: statusColor[appt.status] }]}>
+            {statusLabel[appt.status] || appt.status}
+          </Text>
+        </View>
+
+        {isInService && (
+          <View style={[styles.statusBanner, { backgroundColor: colors.success }]}>
+            <Feather name="bell" size={24} color={colors.accentForeground} />
+            <Text style={[styles.statusBannerText, { color: colors.accentForeground }]}>
+              It is your turn!
+            </Text>
+          </View>
+        )}
+
+        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.infoRow}>
+            <Feather name="user" size={18} color={colors.primary} />
+            <Text style={[styles.infoText, { color: colors.foreground }]}>{appt.clientName}</Text>
+          </View>
+          {appt.clientPhone && (
+            <View style={styles.infoRow}>
+              <Feather name="phone" size={18} color={colors.primary} />
+              <Text style={[styles.infoText, { color: colors.foreground }]}>{appt.clientPhone}</Text>
+            </View>
+          )}
+        </View>
+
+        {!isDone && (
+          <>
+            {!showCancel ? (
+              <SecondaryButton title="Cancel Appointment" onPress={onCancel} />
+            ) : (
+              <View style={styles.cancelConfirm}>
+                <Text style={[styles.cancelText, { color: colors.destructive }]}>
+                  Cancel this appointment?
+                </Text>
+                <PrimaryButton
+                  title={cancelMutation.isPending ? "Cancelling..." : "Yes, Cancel"}
+                  onPress={handleCancel}
+                  disabled={cancelMutation.isPending}
+                />
+                <SecondaryButton title="Keep Appointment" onPress={() => setShowCancel(false)} />
+              </View>
+            )}
+          </>
+        )}
+
+        {isDone && (
+          <PrimaryButton title="Done" onPress={() => router.replace("/")} />
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  center: { flex: 1, alignItems: "center", paddingHorizontal: 24 },
+  trackTitle: { fontSize: 24, fontFamily: "Inter_700Bold", marginBottom: 4 },
+  trackSub: { fontSize: 15, fontFamily: "Inter_400Regular", marginBottom: 24 },
+  ticketCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  ticketLabel: { fontSize: 13, fontFamily: "Inter_500Medium", marginBottom: 4 },
+  ticketNumber: { fontSize: 48, fontFamily: "Inter_700Bold" },
+  statusBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  statusBannerText: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  infoCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    gap: 12,
+  },
+  infoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  infoText: { fontSize: 15, fontFamily: "Inter_500Medium" },
+  statusPill: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginBottom: 16,
+  },
+  statusPillText: { fontSize: 13, fontFamily: "Inter_700Bold" },
+  cancelConfirm: { gap: 10, marginTop: 8 },
+  cancelText: { fontSize: 14, fontFamily: "Inter_600SemiBold", textAlign: "center", marginBottom: 4 },
+  noSessionTitle: { fontSize: 20, fontFamily: "Inter_700Bold", marginTop: 16, marginBottom: 8 },
+  noSessionDesc: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", marginBottom: 24 },
+});
