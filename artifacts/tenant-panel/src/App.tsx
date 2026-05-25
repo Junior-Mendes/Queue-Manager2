@@ -1,10 +1,12 @@
+import { useState, useEffect } from "react";
 import { Route, Switch } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ClerkProvider, Show, SignIn, SignUp } from "@clerk/react";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
 
 import { Layout } from "./components/layout";
+import LoginPage from "./pages/login";
 import Dashboard from "./pages/dashboard";
 import Businesses from "./pages/businesses";
 import QueuePage from "./pages/queue";
@@ -20,82 +22,74 @@ const queryClient = new QueryClient({
   },
 });
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+type User = { id: string; email: string; name: string; role: string; tenantId: string };
 
-function SignInRoute() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-muted/40 p-4">
-      <SignIn routing="hash" fallbackRedirectUrl={basePath + "/dashboard"} />
-    </div>
-  );
+function getStoredUser(): { user: User; token: string } | null {
+  try {
+    const raw = localStorage.getItem("saas_tenant_user");
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data?.token && data?.user?.tenantId) return data;
+  } catch { /* ignore */ }
+  return null;
 }
 
-function SignUpRoute() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-muted/40 p-4">
-      <SignUp routing="hash" fallbackRedirectUrl={basePath + "/dashboard"} />
-    </div>
-  );
-}
-
-function AuthenticatedRouter() {
-  return (
-    <Layout>
-      <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/queue" component={QueuePage} />
-        <Route path="/queues" component={QueuePage} />
-        <Route path="/appointments" component={AppointmentsPage} />
-        <Route path="/businesses" component={Businesses} />
-        <Route path="/services" component={ServicesPage} />
-        <Route path="/professionals" component={ProfessionalsPage} />
-        <Route path="/settings" component={SettingsPage} />
-        <Route component={NotFound} />
-      </Switch>
-    </Layout>
-  );
-}
-
-function GuestRouter() {
-  return (
-    <Switch>
-      <Route path="/sign-in/*?" component={SignInRoute} />
-      <Route path="/sign-up/*?" component={SignUpRoute} />
-      <Route path="/" component={SignInRoute} />
-      <Route component={SignInRoute} />
-    </Switch>
-  );
+function ApiAuthSetup({ token }: { token: string }) {
+  useEffect(() => {
+    setAuthTokenGetter(() => token);
+    return () => setAuthTokenGetter(null);
+  }, [token]);
+  return null;
 }
 
 function App() {
-  if (!clerkPubKey) {
+  const stored = getStoredUser();
+  const [session, setSession] = useState<{ user: User; token: string } | null>(stored);
+
+  const handleLogin = (user: User, token: string) => {
+    localStorage.setItem("saas_tenant_user", JSON.stringify({ user, token }));
+    setSession({ user, token });
+    setAuthTokenGetter(() => token);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("saas_tenant_user");
+    setAuthTokenGetter(null);
+    setSession(null);
+  };
+
+  if (!session) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center p-4">
-        <div className="max-w-md text-center">
-          <h1 className="text-xl font-bold mb-2">Missing Clerk Publishable Key</h1>
-          <p className="text-muted-foreground">The Clerk publishable key is not configured. Please check your environment variables.</p>
-        </div>
-      </div>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <LoginPage onLogin={handleLogin} />
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
     );
   }
 
   return (
-    <ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl}>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Show when="signed-in">
-            <AuthenticatedRouter />
-          </Show>
-          <Show when="signed-out">
-            <GuestRouter />
-          </Show>
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <ApiAuthSetup token={session.token} />
+        <Layout user={session.user} onLogout={handleLogout}>
+          <Switch>
+            <Route path="/" component={Dashboard} />
+            <Route path="/dashboard" component={Dashboard} />
+            <Route path="/queue" component={QueuePage} />
+            <Route path="/queues" component={QueuePage} />
+            <Route path="/appointments" component={AppointmentsPage} />
+            <Route path="/businesses" component={Businesses} />
+            <Route path="/services" component={ServicesPage} />
+            <Route path="/professionals" component={ProfessionalsPage} />
+            <Route path="/settings" component={SettingsPage} />
+            <Route component={NotFound} />
+          </Switch>
+        </Layout>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 

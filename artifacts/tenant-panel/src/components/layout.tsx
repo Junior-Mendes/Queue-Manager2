@@ -1,5 +1,4 @@
 import { Link, useLocation } from "wouter";
-import { UserButton, useUser } from "@clerk/react";
 import {
   LayoutDashboard,
   Store,
@@ -9,6 +8,8 @@ import {
   ListOrdered,
   Settings,
   Menu,
+  LogOut,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -23,12 +24,15 @@ const allNav = [
   { name: "Settings", href: "/settings", icon: Settings, roles: ["tenant_admin", "operator"] },
 ];
 
-export function Layout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
-  const { user } = useUser();
-  const role = (user?.publicMetadata?.role as string) || "operator";
+interface LayoutProps {
+  children: React.ReactNode;
+  user: { id: string; email: string; name: string; role: string; tenantId: string };
+  onLogout: () => void;
+}
 
-  const navigation = allNav.filter((item) => item.roles.includes(role));
+export function Layout({ children, user, onLogout }: LayoutProps) {
+  const [location] = useLocation();
+  const navigation = allNav.filter((item) => item.roles.includes(user.role));
 
   const NavLinks = () => (
     <>
@@ -66,11 +70,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
         <div className="mt-auto border-t p-4 flex items-center gap-3">
-          <UserButton />
-          <div className="flex flex-col overflow-hidden">
-            <span className="text-sm font-medium truncate">{user?.fullName || "User"}</span>
-            <span className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+            <User className="h-4 w-4 text-primary" />
           </div>
+          <div className="flex flex-col overflow-hidden flex-1">
+            <span className="text-sm font-medium truncate">{user.name}</span>
+            <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+          </div>
+          <Button size="icon" variant="ghost" className="shrink-0" onClick={onLogout} title="Sair">
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </aside>
 
@@ -92,12 +101,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <nav className="grid gap-1 p-4">
                 <NavLinks />
               </nav>
+              <div className="mt-auto border-t p-4 flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                  <User className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex flex-col overflow-hidden flex-1">
+                  <span className="text-sm font-medium truncate">{user.name}</span>
+                  <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+                </div>
+                <Button size="icon" variant="ghost" className="shrink-0" onClick={onLogout}>
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </SheetContent>
           </Sheet>
           <span className="text-lg font-bold">SalonPanel</span>
-          <div className="ml-auto">
-            <UserButton />
-          </div>
         </header>
 
         {/* Page content */}

@@ -9,6 +9,7 @@ import professionalsRouter from "./professionals";
 import queuesRouter from "./queues";
 import queueEntriesRouter from "./queueEntries";
 import appointmentsRouter from "./appointments";
+import tenantUsersRouter from "./tenantUsers";
 import publicRouter from "./public";
 import statsRouter from "./stats";
 
@@ -24,6 +25,7 @@ router.use(professionalsRouter);
 router.use(queuesRouter);
 router.use(queueEntriesRouter);
 router.use(appointmentsRouter);
+router.use(tenantUsersRouter);
 router.use(publicRouter);
 router.use(statsRouter);
 
