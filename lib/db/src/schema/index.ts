@@ -6,3 +6,5 @@ export * from "./services";
 export * from "./professionals";
 export * from "./queues";
 export * from "./appointments";
+export * from "./admins";
+export * from "./tenantUsers";
