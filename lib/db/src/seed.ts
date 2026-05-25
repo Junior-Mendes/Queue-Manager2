@@ -2,11 +2,29 @@ import { db, pool } from "./index";
 import {
   plansTable, tenantsTable, subscriptionsTable, businessesTable, servicesTable,
   professionalsTable, queuesTable, queueEntriesTable, appointmentsTable,
+  adminsTable, tenantUsersTable,
 } from "./schema";
 import { eq } from "drizzle-orm";
+import bcrypt from "bcrypt";
 
 async function seed() {
   console.log("Seeding database...");
+
+  // Ensure default super admin exists
+  const existingAdmin = await db.query.adminsTable.findFirst({
+    where: eq(adminsTable.email, "admin@admin.com"),
+  });
+  if (!existingAdmin) {
+    const passwordHash = await bcrypt.hash("admin123", 10);
+    await db.insert(adminsTable).values({
+      email: "admin@admin.com",
+      passwordHash,
+      name: "Super Admin",
+    });
+    console.log("Default admin created: admin@admin.com / admin123");
+  } else {
+    console.log("Admin already exists, skipping.");
+  }
 
   // Clear all existing demo data for idempotency
   console.log("Clearing existing demo data...");
@@ -178,6 +196,14 @@ async function seed() {
     await db.insert(appointmentsTable).values(a);
   }
   console.log("Appointments created:", appointmentData.length);
+
+  // 10. Create demo tenant users (local auth)
+  const demoPasswordHash = await bcrypt.hash("tenant123", 10);
+  await db.insert(tenantUsersTable).values([
+    { tenantId, email: "admin@salonchain.com", passwordHash: demoPasswordHash, name: "Salon Admin", role: "tenant_admin" },
+    { tenantId, email: "operator@salonchain.com", passwordHash: demoPasswordHash, name: "Salon Operator", role: "operator" },
+  ]).onConflictDoNothing();
+  console.log("Demo tenant users created: admin@salonchain.com / tenant123, operator@salonchain.com / tenant123");
 
   console.log("\nSeed completed successfully!");
   console.log("Demo tenant slug: salonchain-demo");
