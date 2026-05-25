@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Tenant Web Panel"
+version = "1.0.0"
+id = "artifacts/tenant-panel"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23667
+
+[services.development]
+run = "pnpm --filter @workspace/tenant-panel run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tenant-panel", "run", "build" ]
+publicDir = "artifacts/tenant-panel/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23667"
+BASE_PATH = "/"
