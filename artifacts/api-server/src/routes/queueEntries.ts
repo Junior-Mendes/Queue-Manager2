@@ -51,24 +51,37 @@ router.post("/queues/:queueId/entries", async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-router.get("/queues/:queueId/entries/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
+// Anonymous clients can check their queue entry status
+router.get("/queues/:queueId/entries/:id", async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const entry = await db.select().from(queueEntriesTable).where(and(eq(queueEntriesTable.id, id as string), eq(queueEntriesTable.tenantId, req.tenantId!))).then(r => r[0]);
-    if (!entry) return res.status(404).json({ error: "Not found" });
-    return res.json(entry);
+    const { queueId, id } = req.params;
+    const entry = await db.select().from(queueEntriesTable).where(eq(queueEntriesTable.id, id as string)).then(r => r[0]);
+    if (!entry || entry.queueId !== queueId) return res.status(404).json({ error: "Not found" });
+    const queue = await db.select().from(queuesTable).where(eq(queuesTable.id, entry.queueId)).then(r => r[0]);
+    // Enrich with waiting position
+    const ahead = await db.select().from(queueEntriesTable)
+      .where(and(eq(queueEntriesTable.queueId, entry.queueId), eq(queueEntriesTable.status, "waiting"), eq(queueEntriesTable.ticketNumber, entry.ticketNumber)))
+      .orderBy(asc(queueEntriesTable.ticketNumber));
+    const waitingAhead = ahead.findIndex(e => e.id === entry.id);
+    return res.json({
+      ...entry,
+      waitingAhead: waitingAhead >= 0 ? waitingAhead : 0,
+      estimatedWaitMinutes: waitingAhead >= 0 ? (waitingAhead + 1) * (queue?.avgWaitMinutes || 15) : 0,
+    });
   } catch (err) { return next(err); }
 });
 
-router.patch("/queues/:queueId/entries/:id", requireAuth, loadUserContext, requireRole("tenant_admin", "operator", "super_admin"), requireTenant, async (req, res, next) => {
+// Anonymous clients can cancel their own entry
+router.patch("/queues/:queueId/entries/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
     const body = UpdateQueueEntryStatusBody.parse(req.body);
-    const entry = await db.select().from(queueEntriesTable).where(and(eq(queueEntriesTable.id, id as string), eq(queueEntriesTable.tenantId, req.tenantId!))).then(r => r[0]);
+    const entry = await db.select().from(queueEntriesTable).where(eq(queueEntriesTable.id, id as string)).then(r => r[0]);
     if (!entry) return res.status(404).json({ error: "Not found" });
     const updateData: any = { status: body.status };
     if (body.status === "in_service") updateData.servedAt = new Date();
     if (body.status === "done") updateData.finishedAt = new Date();
+    if (body.status === "cancelled") updateData.finishedAt = new Date();
     if (body.notes) updateData.notes = body.notes;
     const [updated] = await db.update(queueEntriesTable).set(updateData).where(eq(queueEntriesTable.id, id as string)).returning();
     return res.json(updated);
