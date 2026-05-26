@@ -537,19 +537,14 @@ O componente `ApiAuthSetup` registra automaticamente um getter de token via `set
 
 ```mermaid
 flowchart TD
-    A([Abre o App]) --> B{Tem sessão ativa?}
+    A([Escaneia o QrCode ou acessa o link]) --> B{Informar CPF} 
+    B{Tem sessão ativa?}
     B -- Sim --> Track[Tela de Acompanhamento]
     B -- Não --> Welcome[Tela de Boas-vindas]
-    Welcome --> C{Como quer encontrar?}
-    C -- Digita código --> Lookup[Busca /public/businesses/:slug]
-    C -- Escaneia QR --> Scan[Scanner de QR Code]
-    Scan --> Lookup
-    Lookup --> Business[Tela do Estabelecimento]
-    Business --> D{O que quer fazer?}
-    D -- Entrar na Fila --> JoinForm[Formulário de Fila]
-    D -- Agendar --> BookForm[Formulário de Agendamento]
-    JoinForm --> E[POST /queues/:id/entries]
-    BookForm --> F[POST /appointments]
+    C -- Entrar na Fila --> JoinForm[Formulário de Fila]
+    C -- Agendar --> BookForm[Formulário de Agendamento]
+    JoinForm --> D[POST /queues/:id/entries]
+    BookForm --> D[POST /appointments]
     E --> Track
     F --> Track
     Track --> G{Status}
