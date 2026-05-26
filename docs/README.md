@@ -640,3 +640,238 @@ Clientes finais não se autenticam. Os endpoints públicos (`/public/...`, `POST
 3. Acessa **Tenants** → cria novos tenants ou filtra por status/plano.
 4. Na tela de detalhe de um tenant, pode alterar o plano ou suspender/reativar a conta.
 5. Acessa **Plans** → cria ou edita planos ajustando preço e limites.
+
+
+
+
+# Diagramas dos Fluxos do Sistema
+
+## Objetivo
+
+Este documento complementa [SYSTEM-FLOWS.md](./SYSTEM-FLOWS.md) com diagramas visuais dos principais fluxos do sistema.
+
+Ele foca no que o produto faz hoje e em como os modulos se conectam.
+
+## 1. Visao geral dos atores
+
+```mermaid
+flowchart LR
+    SA[Super Admin]
+    TP[Tenant Panel]
+    CW[Customer Web]
+    API[API]
+    DB[(PostgreSQL)]
+    WS[WebSocket]
+
+    SA --> API
+    TP --> API
+    CW --> API
+    API --> DB
+    API --> WS
+    WS --> TP
+    WS --> CW
+```
+
+## 2. Jornada publica do cliente
+
+```mermaid
+flowchart TD
+    A[Cliente escaneia QR code<br/>ou abre link] --> B[Pagina do estabelecimento]
+    B --> C[Informar CPF]
+    C --> D{Ja existe atendimento ativo?}
+    D -- Sim --> E[Tela de acompanhamento]
+    D -- Nao --> F[Escolher acao]
+    F --> G[Entrar na fila]
+    F --> H[Agendar horario]
+    G --> E
+    H --> E
+```
+
+## 3. Fluxo de identificacao por CPF
+
+```mermaid
+sequenceDiagram
+    participant Cliente
+    participant CustomerWeb
+    participant API
+    participant DB
+
+    Cliente->>CustomerWeb: Informar CPF
+    CustomerWeb->>CustomerWeb: Normalizar CPF
+    CustomerWeb->>API: POST /api/public/session-lookup
+    API->>DB: Buscar atendimento ativo por business + CPF
+    DB-->>API: Resultado
+    API-->>CustomerWeb: found / not found
+    alt atendimento encontrado
+        CustomerWeb-->>Cliente: Redireciona para /track
+    else sem atendimento
+        CustomerWeb-->>Cliente: Exibe entrar na fila ou agendar
+    end
+```
+
+## 4. Fluxo de entrada na fila
+
+```mermaid
+flowchart TD
+    A[Pagina /:slug/join] --> B[Escolher servico opcional]
+    B --> C[Escolher profissional]
+    C --> D[Opcao profissional aleatorio]
+    C --> E[Preencher nome telefone e CPF]
+    D --> E
+    E --> F{Fila aberta encontrada?}
+    F -- Nao --> G[Exibir aviso e bloquear acao]
+    F -- Sim --> H[Criar queue_entry]
+    H --> I[Sincronizar service_line_entry]
+    I --> J[Salvar sessao local]
+    J --> K[Tela de sucesso]
+    K --> L[Acompanhar atendimento]
+```
+
+## 5. Fluxo de agendamento
+
+```mermaid
+flowchart TD
+    A[Pagina /:slug/book] --> B[Escolher servico]
+    B --> C[Escolher profissional]
+    C --> D[Opcao profissional aleatorio]
+    C --> E[Escolher data]
+    D --> E
+    E --> F[Carregar horarios disponiveis]
+    F --> G[Escolher horario]
+    G --> H[Preencher nome telefone e CPF]
+    H --> I[Criar appointment]
+    I --> J[Sincronizar service_line_entry]
+    J --> K[Salvar sessao local]
+    K --> L[Tela de sucesso]
+    L --> M[Acompanhar atendimento]
+```
+
+## 6. Fluxo de acompanhamento do cliente
+
+```mermaid
+flowchart TD
+    A[Cliente entra em /track] --> B[Restaurar sessao local]
+    B --> C{Sessao encontrada?}
+    C -- Nao --> D[Voltar para inicio]
+    C -- Sim --> E{Tipo da sessao}
+    E -- service-line --> F[Consultar service_line]
+    E -- legado queue --> G[Consultar fila legada]
+    E -- legado appointment --> H[Consultar agendamento legado]
+    F --> I[Exibir status atual]
+    G --> I
+    H --> I
+    I --> J[Opcao de cancelar quando permitido]
+```
+
+## 7. Fluxo operacional do tenant na fila
+
+```mermaid
+sequenceDiagram
+    participant Operador
+    participant TenantPanel
+    participant API
+    participant DB
+    participant WS
+    participant Cliente
+
+    Operador->>TenantPanel: Abrir pagina Queue
+    TenantPanel->>API: Listar filas e entradas
+    API->>DB: Buscar dados do dia
+    DB-->>API: Resultado
+    API-->>TenantPanel: Filas e entradas
+    Operador->>TenantPanel: Chamar proximo
+    TenantPanel->>API: POST /api/queues/:id/call-next
+    API->>DB: Atualizar queue_entry
+    API->>DB: Sincronizar service_line_entry
+    API->>WS: Broadcast de atualizacao
+    WS-->>Cliente: Atualizacao de status
+    WS-->>TenantPanel: Atualizacao de status
+```
+
+## 8. Fluxo de links e QR codes por estabelecimento
+
+```mermaid
+flowchart TD
+    A[Tenant acessa Businesses] --> B[Seleciona estabelecimento]
+    B --> C[Visualiza link publico]
+    C --> D[Copiar link]
+    C --> E[Abrir pagina publica]
+    C --> F[Gerar ou baixar QR code]
+    F --> G[QR code aponta para link do estabelecimento]
+    G --> H[Cliente abre fluxo publico]
+```
+
+## 9. Fluxo do super admin
+
+```mermaid
+flowchart TD
+    A[Super admin faz login] --> B[Painel Super Admin]
+    B --> C[Gerenciar planos]
+    B --> D[Gerenciar tenants]
+    B --> E[Ver estatisticas globais]
+    C --> F[Criar editar ativar desativar planos]
+    D --> G[Criar editar acompanhar tenants]
+```
+
+## 10. Fluxo tecnico da linha unificada
+
+```mermaid
+flowchart LR
+    Q[queue_entries] --> S[service_line_entries]
+    A[appointments] --> S
+    S --> T[Acompanhamento do cliente]
+    S --> O[Operacao do tenant]
+```
+
+## 11. Fluxo de sincronizacao no backend
+
+```mermaid
+sequenceDiagram
+    participant Cliente
+    participant API
+    participant DB
+    participant WS
+
+    alt entrada na fila
+        Cliente->>API: Criar queue_entry
+        API->>DB: Insert queue_entries
+        API->>DB: Upsert service_line_entries
+    else agendamento
+        Cliente->>API: Criar appointment
+        API->>DB: Insert appointments
+        API->>DB: Upsert service_line_entries
+    end
+    API->>WS: Broadcast de atualizacao
+    WS-->>Cliente: Novo status
+```
+
+## 12. Estado atual da migracao funcional
+
+```mermaid
+flowchart TD
+    A[Fluxos legados] --> B[queue_entries]
+    A --> C[appointments]
+    B --> D[service_line_entries]
+    C --> D
+    D --> E[Acompanhamento publico unificado]
+    D --> F[Base para operacao unificada]
+    F --> G[UX operacional completa ainda em transicao]
+```
+
+## Leitura recomendada em conjunto
+
+- [Fluxos do Sistema e Status de Implementacao](./SYSTEM-FLOWS.md)
+- [Plano da linha unificada por profissional](./UNIFIED-SERVICE-LINE-PLAN.md)
+- [Publicacao local em localhost](./LOCALHOST.md)
+
+
+
+
+
+
+
+
+
+
+
+
