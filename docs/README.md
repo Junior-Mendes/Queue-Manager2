@@ -1,649 +1,3 @@
-# Documentação do Projeto — Queue & Appointment SaaS
-
-## Índice
-
-1. [Visão Geral](#1-visão-geral)
-2. [Arquitetura](#2-arquitetura)
-3. [Stack Tecnológica](#3-stack-tecnológica)
-4. [Artefatos e Estrutura do Monorepo](#4-artefatos-e-estrutura-do-monorepo)
-5. [Banco de Dados](#5-banco-de-dados)
-6. [API REST](#6-api-rest)
-7. [WebSocket](#7-websocket)
-8. [Painel do Tenant](#8-painel-do-tenant)
-9. [Painel Super Admin](#9-painel-super-admin)
-10. [App Mobile do Cliente](#10-app-mobile-do-cliente)
-11. [Autenticação e Autorização](#11-autenticação-e-autorização)
-12. [Fluxos de Uso](#12-fluxos-de-uso)
-
----
-
-## 1. Visão Geral
-
-Plataforma SaaS **multi-tenant** para gestão de filas digitais e agendamentos voltada a pequenos e médios negócios (barbearias, clínicas, salões, etc.).
-
-Cada cliente da plataforma (chamado de **tenant**) possui um ou mais estabelecimentos (**businesses**). O tenant gerencia serviços, profissionais, filas e agendamentos pelo **Painel Web**. Os clientes finais dos estabelecimentos usam o **App Mobile** para entrar em filas ou agendar horários, sem necessidade de cadastro.
-
-O **Super Admin** administra a plataforma globalmente: cria planos, cadastra tenants e monitora métricas de uso.
-
----
-
-## 2. Arquitetura
-
-### Diagrama Geral
-
-```mermaid
-graph TD
-    subgraph Clientes Finais
-        Mobile[App Mobile\nExpo / React Native]
-    end
-
-    subgraph Tenants
-        TenantPanel[Painel Web do Tenant\nReact + Vite]
-    end
-
-    subgraph Plataforma
-        SuperAdmin[Painel Super Admin\nReact + Vite]
-    end
-
-    subgraph Backend
-        API[API Server\nExpress + TypeScript]
-        WS[WebSocket Server\n/api/ws]
-        DB[(PostgreSQL\nDrizzle ORM)]
-        Clerk[Clerk\nAutenticação]
-    end
-
-    Mobile -- HTTP REST --> API
-    Mobile -- ws:// --> WS
-    TenantPanel -- HTTP REST --> API
-    TenantPanel -- Clerk JWT --> Clerk
-    SuperAdmin -- HTTP REST --> API
-    SuperAdmin -- Clerk JWT --> Clerk
-    API -- Drizzle --> DB
-    API -- Clerk SDK --> Clerk
-    WS -- push de eventos --> Mobile
-    WS -- push de eventos --> TenantPanel
-```
-
-### Fluxo de Dados (Fila em Tempo Real)
-
-```mermaid
-sequenceDiagram
-    participant C as App Mobile
-    participant API as API Server
-    participant DB as PostgreSQL
-    participant WS as WebSocket
-    participant T as Painel Tenant
-
-    C->>API: POST /api/queues/{id}/entries (join queue)
-    API->>DB: INSERT queue_entry
-    API->>WS: broadcastQueueUpdate(queueId)
-    WS-->>T: event: queue_updated
-    WS-->>C: event: connected
-    T->>API: POST /api/queues/{id}/call-next
-    API->>DB: UPDATE queue_entry status=called
-    API->>WS: broadcastQueueEntryUpdate(queueId, entryId)
-    WS-->>C: event: queue_entry_updated {status: "called"}
-    C-->>C: Exibe notificação "É sua vez!"
-```
-
----
-
-## 3. Stack Tecnológica
-
-| Camada | Tecnologia |
-|--------|-----------|
-| **Backend — Runtime** | Node.js + TypeScript |
-| **Backend — Framework** | Express.js |
-| **Backend — WebSocket** | `ws` (nativo, sem Socket.IO) |
-| **Backend — Logs** | Pino + pino-http |
-| **Banco de Dados** | PostgreSQL |
-| **ORM** | Drizzle ORM + drizzle-zod |
-| **Autenticação** | Clerk (JWT via `@clerk/express`) |
-| **Frontend Web** | React + Vite + TypeScript |
-| **Roteamento Web** | Wouter |
-| **Queries HTTP (Web)** | TanStack Query (React Query) |
-| **UI Web** | shadcn/ui + Tailwind CSS + Radix UI |
-| **App Mobile** | Expo + React Native + TypeScript |
-| **Roteamento Mobile** | Expo Router (file-based) |
-| **Queries HTTP (Mobile)** | TanStack Query |
-| **Ícones Mobile** | `@expo/vector-icons` (Feather) |
-| **Spec da API** | OpenAPI 3.1 (YAML) |
-| **Client HTTP gerado** | `@workspace/api-client-react` (gerado via openapi-fetch) |
-| **Gerenciador de Pacotes** | pnpm workspaces |
-
----
-
-## 4. Artefatos e Estrutura do Monorepo
-
-```
-/
-├── artifacts/
-│   ├── api-server/          # Backend Express (API REST + WebSocket)
-│   ├── tenant-panel/        # SPA React — painel de gestão do tenant
-│   ├── super-admin-panel/   # SPA React — painel do administrador da plataforma
-│   ├── customer-app/        # App Expo — app mobile do cliente final
-│   └── mockup-sandbox/      # Canvas de design / protótipos
-│
-├── lib/
-│   ├── db/                  # Schema Drizzle e cliente PostgreSQL compartilhado
-│   ├── api-spec/            # openapi.yaml — fonte da verdade da API
-│   └── api-client-react/    # Hooks React Query gerados a partir do OpenAPI
-│
-└── docs/
-    └── README.md            # Esta documentação
-```
-
-### Pacotes Detalhados
-
-| Pacote | Caminho | Propósito |
-|--------|---------|-----------|
-| `api-server` | `artifacts/api-server` | Servidor HTTP/WS. Expõe todos os endpoints REST e o servidor WebSocket em `/api/ws`. |
-| `tenant-panel` | `artifacts/tenant-panel` | SPA para o dono/operador do estabelecimento. Autenticada via Clerk. Preview em `/`. |
-| `super-admin-panel` | `artifacts/super-admin-panel` | SPA para o administrador da plataforma. Autenticada via Clerk com role `super_admin`. Preview em `/super-admin/`. |
-| `customer-app` | `artifacts/customer-app` | App Expo para o cliente final. Acesso anônimo. Preview em `/customer-app/`. |
-| `@workspace/db` | `lib/db` | Schema Drizzle (`plans`, `tenants`, `businesses`, etc.) e instância do cliente Drizzle/PostgreSQL. |
-| `@workspace/api-spec` | `lib/api-spec` | Arquivo `openapi.yaml` com toda a especificação da API. |
-| `@workspace/api-client-react` | `lib/api-client-react` | Hooks React Query (`useListBusinesses`, `useJoinQueue`, etc.) gerados automaticamente a partir do OpenAPI. |
-
----
-
-## 5. Banco de Dados
-
-O banco é PostgreSQL gerenciado via **Drizzle ORM**. Todos os IDs são UUIDs gerados no servidor (`crypto.randomUUID()`). O campo `tenantId` presente na maioria das tabelas garante o isolamento multi-tenant.
-
-### Diagrama de Relacionamentos
-
-```mermaid
-erDiagram
-    plans ||--o{ tenants : "subscribed to"
-    plans ||--o{ subscriptions : "referenced by"
-    tenants ||--o{ subscriptions : "has"
-    tenants ||--o{ businesses : "owns"
-    businesses ||--o{ services : "offers"
-    businesses ||--o{ professionals : "employs"
-    businesses ||--o{ queues : "opens"
-    businesses ||--o{ appointments : "receives"
-    queues ||--o{ queue_entries : "contains"
-    services }o--o{ queue_entries : "optional ref"
-    services }o--o{ appointments : "optional ref"
-    professionals }o--o{ queue_entries : "optional ref"
-    professionals }o--o{ appointments : "optional ref"
-    professionals }o--o{ queues : "optional ref"
-```
-
-### Tabelas
-
-#### `plans`
-Planos SaaS disponíveis na plataforma.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `name` | text | Nome do plano (ex: "Starter") |
-| `slug` | text (unique) | Identificador URL-safe |
-| `description` | text | Descrição opcional |
-| `max_businesses` | integer | Limite de estabelecimentos por tenant |
-| `max_operators` | integer | Limite de operadores |
-| `max_queues_per_day` | integer | Limite de filas abertas por dia |
-| `price` | integer | Preço em centavos |
-| `status` | enum | `active` \| `inactive` |
-| `created_at` / `updated_at` | timestamp | Timestamps |
-
-#### `tenants`
-Clientes da plataforma SaaS (negócios assinantes).
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `name` | text | Nome do tenant |
-| `slug` | text (unique) | Identificador URL-safe |
-| `plan_id` | text (FK → plans) | Plano atual |
-| `status` | enum | `active` \| `trial` \| `suspended` \| `cancelled` |
-| `owner_clerk_id` | text | ID do usuário no Clerk (dono) |
-| `email` | text | Email de contato |
-| `phone` | text | Telefone opcional |
-| `created_at` / `updated_at` | timestamp | Timestamps |
-
-#### `subscriptions`
-Histórico de assinaturas de cada tenant.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `tenant_id` | text (FK → tenants) | Tenant |
-| `plan_id` | text (FK → plans) | Plano contratado |
-| `status` | enum | `active` \| `trial` \| `cancelled` \| `past_due` \| `paused` |
-| `current_period_start` | timestamp | Início do período vigente |
-| `current_period_end` | timestamp | Fim do período vigente |
-| `trial_ends_at` | timestamp | Fim do trial |
-| `cancelled_at` | timestamp | Data de cancelamento |
-
-#### `businesses`
-Estabelecimentos pertencentes a um tenant.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `tenant_id` | text (FK → tenants) | Tenant dono |
-| `name` | text | Nome do estabelecimento |
-| `slug` | text (unique) | Código público (usado pelo app mobile) |
-| `description` | text | Descrição opcional |
-| `category` | text | Categoria (ex: "barbershop") |
-| `address` | text | Endereço opcional |
-| `phone` | text | Telefone opcional |
-| `opening_hours` | text | Horário de funcionamento (texto livre) |
-
-#### `services`
-Serviços oferecidos por um estabelecimento.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `tenant_id` | text (FK → tenants) | Tenant |
-| `business_id` | text (FK → businesses) | Estabelecimento |
-| `name` | text | Nome do serviço |
-| `description` | text | Descrição opcional |
-| `duration_minutes` | integer | Duração estimada em minutos |
-| `is_active` | boolean | Se está disponível para seleção |
-
-#### `professionals`
-Profissionais/operadores de um estabelecimento.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `tenant_id` | text (FK → tenants) | Tenant |
-| `business_id` | text (FK → businesses) | Estabelecimento |
-| `clerk_id` | text | ID no Clerk (opcional — para login no painel) |
-| `name` | text | Nome do profissional |
-| `role` | text | Cargo (ex: "operator", "barber") |
-| `avatar_url` | text | URL do avatar |
-| `is_active` | boolean | Se está ativo |
-
-#### `queues`
-Filas abertas para um estabelecimento em uma data.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `tenant_id` | text (FK → tenants) | Tenant |
-| `business_id` | text (FK → businesses) | Estabelecimento |
-| `service_id` | text (FK → services) | Serviço opcional |
-| `professional_id` | text (FK → professionals) | Profissional opcional |
-| `date` | date | Data da fila (YYYY-MM-DD) |
-| `status` | enum | `open` \| `paused` \| `closed` |
-| `current_ticket` | integer | Número do ticket sendo atendido |
-| `last_ticket` | integer | Último número emitido |
-| `avg_wait_minutes` | integer | Tempo médio de espera calculado |
-
-#### `queue_entries`
-Entradas (clientes) em uma fila.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `tenant_id` | text (FK → tenants) | Tenant |
-| `queue_id` | text (FK → queues) | Fila |
-| `ticket_number` | integer | Número sequencial do ticket |
-| `client_name` | text | Nome do cliente |
-| `client_phone` | text | Telefone opcional |
-| `service_id` | text (FK → services) | Serviço selecionado |
-| `professional_id` | text (FK → professionals) | Profissional preferido |
-| `status` | enum | `waiting` \| `called` \| `in_service` \| `done` \| `cancelled` \| `no_show` |
-| `called_at` | timestamp | Quando foi chamado |
-| `served_at` | timestamp | Quando o serviço começou |
-| `finished_at` | timestamp | Quando terminou |
-| `notes` | text | Observações do operador |
-
-#### `appointments`
-Agendamentos com hora marcada.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `id` | text (PK) | UUID |
-| `tenant_id` | text (FK → tenants) | Tenant |
-| `business_id` | text (FK → businesses) | Estabelecimento |
-| `service_id` | text (FK → services) | Serviço opcional |
-| `professional_id` | text (FK → professionals) | Profissional opcional |
-| `client_name` | text | Nome do cliente |
-| `client_phone` | text | Telefone opcional |
-| `scheduled_at` | timestamp | Data e hora do agendamento |
-| `status` | enum | `scheduled` \| `confirmed` \| `in_service` \| `done` \| `cancelled` \| `no_show` |
-| `notes` | text | Observações |
-| `cancel_reason` | text | Motivo do cancelamento |
-| `confirmed_at` / `started_at` / `finished_at` | timestamp | Timestamps de ciclo de vida |
-
----
-
-## 6. API REST
-
-Base URL: `/api`
-
-Convenções de autenticação:
-- **Público** — sem token, acesso anônimo
-- **Autenticado** — requer Bearer token JWT do Clerk (`Authorization: Bearer <token>`)
-- **Tenant** — autenticado + role `tenant_admin` ou `operator`
-- **Super Admin** — autenticado + role `super_admin`
-
-### Endpoints Completos
-
-#### Health
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/healthz` | Público | Verificação de saúde do servidor |
-
-#### Planos
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/plans` | Público | Lista todos os planos SaaS |
-| POST | `/plans` | Super Admin | Cria novo plano |
-| GET | `/plans/{id}` | Público | Busca plano por ID |
-| PUT | `/plans/{id}` | Super Admin | Atualiza plano |
-| DELETE | `/plans/{id}` | Super Admin | Remove plano |
-
-#### Tenants
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/tenants` | Super Admin | Lista todos os tenants (filtros: `status`, `planId`) |
-| POST | `/tenants` | Super Admin | Cria novo tenant |
-| GET | `/tenants/me` | Tenant | Retorna o tenant do usuário autenticado |
-| GET | `/tenants/{id}` | Super Admin | Busca tenant por ID |
-| PUT | `/tenants/{id}` | Tenant / Super Admin | Atualiza dados do tenant |
-| PATCH | `/tenants/{id}/status` | Super Admin | Altera status do tenant |
-
-#### Estabelecimentos (Businesses)
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/businesses` | Tenant | Lista estabelecimentos do tenant autenticado |
-| POST | `/businesses` | Tenant | Cria estabelecimento |
-| GET | `/businesses/{id}` | Tenant | Busca estabelecimento por ID |
-| PUT | `/businesses/{id}` | Tenant | Atualiza estabelecimento |
-| DELETE | `/businesses/{id}` | Tenant | Remove estabelecimento |
-
-#### Serviços
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/businesses/{businessId}/services` | Tenant | Lista serviços do estabelecimento |
-| POST | `/businesses/{businessId}/services` | Tenant | Cria serviço |
-| PUT | `/businesses/{businessId}/services/{id}` | Tenant | Atualiza serviço |
-| DELETE | `/businesses/{businessId}/services/{id}` | Tenant | Remove serviço |
-
-#### Profissionais
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/businesses/{businessId}/professionals` | Tenant | Lista profissionais |
-| POST | `/businesses/{businessId}/professionals` | Tenant | Cria profissional |
-| PUT | `/businesses/{businessId}/professionals/{id}` | Tenant | Atualiza profissional |
-| DELETE | `/businesses/{businessId}/professionals/{id}` | Tenant | Remove profissional |
-
-#### Filas (Queues)
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/queues` | Tenant | Lista filas de um estabelecimento (params: `businessId`, `date`) |
-| POST | `/queues` | Tenant | Abre nova fila para hoje |
-| GET | `/queues/{id}` | Tenant | Busca fila com suas entradas |
-| PATCH | `/queues/{id}/status` | Tenant | Abre, pausa ou fecha a fila |
-| POST | `/queues/{id}/call-next` | Tenant | Chama o próximo cliente na fila |
-
-#### Entradas de Fila (Queue Entries)
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/queues/{queueId}/entries` | Tenant | Lista entradas (filtro: `status`) |
-| POST | `/queues/{queueId}/entries` | Público | Cliente entra na fila (anônimo) |
-| GET | `/queues/{queueId}/entries/{id}` | Público | Consulta status da entrada |
-| PATCH | `/queues/{queueId}/entries/{id}` | Tenant | Atualiza status da entrada |
-
-#### Agendamentos (Appointments)
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/appointments` | Tenant | Lista agendamentos (params: `businessId`, `date`, `professionalId`, `status`) |
-| POST | `/appointments` | Público | Cria agendamento (cliente anônimo) |
-| GET | `/appointments/{id}` | Público | Consulta agendamento por ID |
-| PATCH | `/appointments/{id}` | Tenant | Atualiza status do agendamento |
-| GET | `/appointments/available-slots` | Público | Lista horários disponíveis (params: `businessId`, `date`, `serviceId?`, `professionalId?`) |
-
-#### Endpoints Públicos (App Mobile)
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/public/businesses/{slug}` | Público | Busca estabelecimento por slug (retorna serviços e profissionais) |
-| GET | `/public/businesses/{slug}/queues` | Público | Lista filas abertas do estabelecimento |
-
-#### Estatísticas
-
-| Método | Caminho | Auth | Descrição |
-|--------|---------|------|-----------|
-| GET | `/stats/saas` | Super Admin | Métricas globais da plataforma |
-| GET | `/stats/tenant` | Tenant | Métricas do tenant autenticado (param: `businessId?`) |
-
----
-
-## 7. WebSocket
-
-**Endpoint:** `ws://<host>/api/ws`
-
-O servidor WebSocket permite que clientes se inscrevam em atualizações em tempo real de uma entrada de fila ou de um agendamento específico. A conexão é somente leitura — o servidor empurra eventos, o cliente não envia mensagens.
-
-### Conexão
-
-A URL de conexão deve incluir parâmetros de query:
-
-**Monitorar entrada de fila:**
-```
-ws://<host>/api/ws?type=queue&queueId=<uuid>&entryId=<uuid>
-```
-
-**Monitorar agendamento:**
-```
-ws://<host>/api/ws?type=appointment&appointmentId=<uuid>
-```
-
-Se os parâmetros forem inválidos ou ausentes, a conexão é encerrada com código `1008`.
-
-### Eventos Emitidos pelo Servidor
-
-| Evento | Quando é enviado | Payload |
-|--------|-----------------|---------|
-| `connected` | Imediatamente após conexão bem-sucedida | `{}` |
-| `queue_entry_updated` | Quando o status de uma entrada específica muda | Objeto `QueueEntry` completo |
-| `queue_updated` | Quando a fila avança (call-next, nova entrada) | Objeto `Queue` com `entries` |
-| `appointment_updated` | Quando o status do agendamento muda | Objeto `Appointment` completo |
-
-### Comportamento de Fallback (App Mobile)
-
-O app mobile tenta conectar via WebSocket. Se a conexão não estiver disponível (`wsStatus === "fallback"`), o app automaticamente alterna para **polling** com intervalo de 5 segundos, garantindo que o usuário sempre veja dados atualizados.
-
----
-
-## 8. Painel do Tenant
-
-**Preview path:** `/`  
-**Autenticação:** Clerk (hash routing)
-
-### Rotas da SPA
-
-| Rota | Componente | Descrição |
-|------|-----------|-----------|
-| `/` ou `/dashboard` | `Dashboard` | Visão geral com estatísticas (atendidos hoje, em espera, agendamentos) |
-| `/queue` ou `/queues` | `QueuePage` | Gestão de filas: abrir, pausar, fechar, chamar próximo e ver clientes na fila |
-| `/appointments` | `AppointmentsPage` | Calendário e lista de agendamentos com filtros por data e profissional |
-| `/businesses` | `Businesses` | Cadastro e listagem de estabelecimentos do tenant |
-| `/services` | `ServicesPage` | Gerenciar catálogo de serviços por estabelecimento |
-| `/professionals` | `ProfessionalsPage` | Cadastrar e editar profissionais/operadores |
-| `/settings` | `SettingsPage` | Configurações do tenant (dados, plano atual) |
-| `/sign-in` | `SignInRoute` | Tela de login Clerk (somente visitantes) |
-| `/sign-up` | `SignUpRoute` | Tela de cadastro Clerk (somente visitantes) |
-
-### Fluxo de Autenticação
-
-1. Usuário acessa qualquer rota — Clerk verifica se há sessão ativa.
-2. Se **não autenticado** → redireciona para `/sign-in`.
-3. Após login bem-sucedido → redireciona para `/dashboard`.
-4. O token JWT do Clerk é enviado automaticamente nas chamadas à API via `Authorization: Bearer`.
-5. A API identifica o tenant via `ownerClerkId` ou via metadata do token (`tenantId`, `role`).
-
----
-
-## 9. Painel Super Admin
-
-**Preview path:** `/super-admin/`  
-**Autenticação:** Clerk + role `super_admin` nos metadados da sessão
-
-### Rotas da SPA
-
-| Rota | Componente | Descrição |
-|------|-----------|-----------|
-| `/` ou `/dashboard` | `Dashboard` | Métricas globais: total de tenants, ativos, em trial, suspensos, filas e agendamentos do dia |
-| `/tenants` | `TenantsPage` | Lista de todos os tenants com filtros por status e plano; botão para criar novo tenant |
-| `/tenants/:id` | `TenantDetailPage` | Detalhes de um tenant: dados, plano atual, histórico de assinaturas, ação de alterar plano e status |
-| `/plans` | `PlansPage` | CRUD completo de planos SaaS (nome, preço, limites) |
-| `/sign-in` | `SignInRoute` | Login Clerk (somente visitantes) |
-
-### Token de API
-
-O componente `ApiAuthSetup` registra automaticamente um getter de token via `setAuthTokenGetter(() => getToken())`, que é injetado em todas as chamadas do `@workspace/api-client-react`, garantindo autenticação transparente.
-
----
-
-## 10. App Mobile do Cliente
-
-**Preview path:** `/customer-app/`  
-**Tecnologia:** Expo + React Native + Expo Router  
-**Autenticação:** Nenhuma — acesso totalmente anônimo
-
-### Telas (file-based routing com Expo Router)
-
-| Arquivo | Rota | Descrição |
-|---------|------|-----------|
-| `app/index.tsx` | `/` | **Boas-vindas** — campo para digitar código do negócio ou botão para escanear QR code |
-| `app/scan.tsx` | `/scan` | **Scanner QR** — lê QR code gerado pelo tenant e navega automaticamente para a tela do negócio |
-| `app/business.tsx` | `/business` | **Estabelecimento** — nome, descrição, lista de serviços e profissionais, botões "Entrar na Fila" e "Agendar" |
-| `app/join-queue.tsx` | `/join-queue` | **Entrar na Fila** — formulário com nome, telefone (opcional), serviço e profissional preferido |
-| `app/book.tsx` | `/book` | **Agendar** — formulário de agendamento com seleção de data, horário disponível, serviço e profissional |
-| `app/track.tsx` | `/track` | **Acompanhar** — monitora em tempo real a posição na fila ou o status do agendamento |
-| `app/_layout.tsx` | (layout raiz) | Configuração global: fontes, providers, SafeAreaProvider |
-| `app/+not-found.tsx` | `*` | Tela 404 |
-
-### Fluxo Completo do Cliente
-
-```mermaid
-flowchart TD
-    A([Escaneia o QrCode ou acessa o link]) --> B{Informar CPF} 
-    B{Tem sessão ativa?}
-    B -- Sim --> Track[Tela de Acompanhamento]
-    B -- Não --> Welcome[Tela de Boas-vindas]
-    C -- Entrar na Fila --> JoinForm[Formulário de Fila]
-    C -- Agendar --> BookForm[Formulário de Agendamento]
-    JoinForm --> D[POST /queues/:id/entries]
-    BookForm --> D[POST /appointments]
-    E --> Track
-    F --> Track
-    Track --> G{Status}
-    G -- called/in_service --> Notificação["🔔 É sua vez!"]
-    G -- done/cancelled --> Welcome
-```
-
-### Atualizações em Tempo Real (Track Screen)
-
-A tela `/track` implementa uma estratégia híbrida:
-
-1. **WebSocket** (preferencial): conecta em `ws://<host>/api/ws?type=queue&queueId=...&entryId=...` ou `?type=appointment&appointmentId=...`.
-2. **Polling** (fallback): se o WebSocket não conectar em tempo hábil, ativa polling a cada 5 segundos via `setInterval`.
-3. O badge de status exibe "Live" (WebSocket ativo), "Polling" (fallback) ou "Connecting..." conforme o estado da conexão.
-4. Quando o status muda para `called` ou `in_service`, o app exibe um banner de destaque e dispara feedback háptico.
-
----
-
-## 11. Autenticação e Autorização
-
-### Clerk
-
-O projeto usa **Clerk** como provedor de identidade para todos os usuários autenticados (tenants e super admins). O cliente Clerk é proxy-ado pelo próprio backend (via `clerkProxyMiddleware`) para evitar problemas de CORS e HTTPS em ambientes de desenvolvimento.
-
-### Roles e Permissões
-
-Os roles são armazenados nos **metadados de sessão do Clerk** (`sessionClaims.metadata`) e lidos pelo middleware `auth.ts` a cada requisição:
-
-| Role | Quem tem | Permissões |
-|------|---------|-----------|
-| `super_admin` | Administrador da plataforma | Acesso total: criar/editar tenants, planos, ver métricas globais |
-| `tenant_admin` | Dono do estabelecimento | CRUD de seus próprios recursos (businesses, services, professionals, queues, appointments) |
-| `operator` | Funcionário cadastrado como `professional` com `clerkId` | Acesso ao business vinculado; operações de fila e agendamento |
-| _(anônimo)_ | Cliente final no app mobile | Apenas endpoints públicos: lookup de negócio, entrar na fila, criar agendamento, acompanhar status |
-
-### Lógica de Identificação (loadUserContext)
-
-O middleware `loadUserContext` opera assim:
-
-1. Lê `sessionClaims.metadata.role` e `sessionClaims.metadata.tenantId` do JWT.
-2. Se `role === "super_admin"` → define `req.role = "super_admin"`.
-3. Se `role === "tenant_admin"` + `tenantId` → define `req.role = "tenant_admin"` e `req.tenantId`.
-4. Se `role === "operator"` + `tenantId` → define `req.role = "operator"`, `req.tenantId` e `req.businessId`.
-5. **Fallback por banco** — se os metadados não estiverem preenchidos:
-   - Busca `tenantsTable` onde `ownerClerkId = userId` → trata como `tenant_admin`.
-   - Busca `professionalsTable` onde `clerkId = userId` → trata como `operator`.
-
-### Isolamento Multi-Tenant
-
-Todas as queries do banco filtram por `tenantId` derivado do contexto da requisição. Um tenant nunca pode ver ou modificar dados de outro tenant — o isolamento é aplicado na camada de repositório, não apenas nas rotas.
-
-### Acesso Anônimo (Clientes)
-
-Clientes finais não se autenticam. Os endpoints públicos (`/public/...`, `POST /queues/:id/entries`, `POST /appointments`, `GET /appointments/:id`, `GET /queues/:queueId/entries/:id`) são acessíveis sem token. O `tenantId` é derivado do `businessId` ou `queueId` passados na requisição.
-
----
-
-## 12. Fluxos de Uso
-
-### Tenant: Configurar e Abrir uma Fila
-
-1. Faz login no Painel Web (`/`).
-2. Acessa **Businesses** → cria ou seleciona um estabelecimento.
-3. Acessa **Services** → cadastra os serviços (ex: "Corte de cabelo", 30 min).
-4. Acessa **Professionals** → cadastra os profissionais.
-5. Acessa **Queue** → clica em "Abrir Fila" para o dia atual.
-6. À medida que clientes entram, clica em **"Chamar Próximo"** para avançar a fila.
-7. Atualiza o status de cada entrada (`in_service`, `done`, `no_show`) conforme necessário.
-
-### Cliente: Entrar na Fila
-
-1. Abre o app mobile.
-2. Digita o código do estabelecimento (slug) ou escaneia o QR code.
-3. Visualiza os serviços e profissionais disponíveis.
-4. Toca em **"Entrar na Fila"** → preenche nome (e opcionalmente telefone).
-5. Recebe um número de ticket e é redirecionado para a tela de acompanhamento.
-6. Acompanha em tempo real: número de pessoas à frente, tempo estimado.
-7. Quando o operador chama o seu ticket, recebe alerta na tela "É sua vez!".
-
-### Cliente: Agendar Horário
-
-1. Abre o app mobile e encontra o estabelecimento.
-2. Toca em **"Agendar"**.
-3. Seleciona data, horário disponível, serviço e/ou profissional.
-4. Preenche nome (e opcionalmente telefone).
-5. Confirma o agendamento → é redirecionado para a tela de acompanhamento.
-6. Na data/hora, o operador muda o status para `confirmed`, `in_service` e `done`.
-
-### Super Admin: Gerenciar a Plataforma
-
-1. Faz login no Painel Super Admin (`/super-admin/`).
-2. Visualiza o **Dashboard** com totais de tenants, negócios e atividade do dia.
-3. Acessa **Tenants** → cria novos tenants ou filtra por status/plano.
-4. Na tela de detalhe de um tenant, pode alterar o plano ou suspender/reativar a conta.
-5. Acessa **Plans** → cria ou edita planos ajustando preço e limites.
-
-
-
-
 # Diagramas dos Fluxos do Sistema
 
 ## Objetivo
@@ -863,6 +217,597 @@ flowchart TD
 - [Fluxos do Sistema e Status de Implementacao](./SYSTEM-FLOWS.md)
 - [Plano da linha unificada por profissional](./UNIFIED-SERVICE-LINE-PLAN.md)
 - [Publicacao local em localhost](./LOCALHOST.md)
+
+
+# Fluxos do Sistema e Status de Implementacao
+
+## Objetivo
+
+Este documento consolida:
+
+- os fluxos principais do sistema
+- o que ja esta implementado
+- o que mudou na evolucao recente
+- o que ainda esta em transicao
+- a referencia funcional que acompanha os diagramas visuais
+
+Ele serve como referencia funcional para produto, operacao e desenvolvimento.
+
+Os diagramas complementares estao em [SYSTEM-FLOW-DIAGRAMS.md](./SYSTEM-FLOW-DIAGRAMS.md).
+
+## Visao geral
+
+O sistema e uma plataforma SaaS multi-tenant para barbearias, saloes e negocios similares.
+
+Existem 4 frentes principais:
+
+1. `Super Admin`
+2. `Tenant Panel`
+3. `Customer Web`
+4. `API + Banco + WebSocket`
+
+## URLs locais
+
+- Tenant panel: `http://localhost:5173`
+- Super admin: `http://localhost:5174/super-admin/`
+- Customer web: `http://localhost:5175`
+- API: `http://localhost:8080/api`
+- Healthcheck: `http://localhost:8080/api/healthz`
+
+## Credenciais demo
+
+- Super admin: `admin@admin.com` / `admin123`
+- Tenant admin: `admin@salonchain.com` / `tenant123`
+- Operator: `operator@salonchain.com` / `tenant123`
+
+## Estabelecimentos demo
+
+- `main-street-barbers`
+- `glamour-beauty`
+- `nail-art-studio`
+
+Exemplos de links publicos:
+
+- `http://localhost:5175/main-street-barbers`
+- `http://localhost:5175/glamour-beauty`
+- `http://localhost:5175/nail-art-studio`
+
+## Arquitetura funcional
+
+### Super Admin
+
+Responsavel por:
+
+- autenticar como administrador global
+- criar e gerenciar planos
+- criar e gerenciar tenants
+- acompanhar estatisticas globais
+
+### Tenant Panel
+
+Responsavel por:
+
+- autenticar usuarios do tenant
+- gerenciar estabelecimentos
+- gerenciar servicos
+- gerenciar profissionais
+- operar fila
+- visualizar agendamentos
+- configurar o tenant
+- gerar e copiar links publicos e QR codes por estabelecimento
+
+### Customer Web
+
+Responsavel por:
+
+- receber o cliente final via QR code ou link
+- identificar o cliente pelo CPF
+- redirecionar para acompanhamento se ja existir atendimento ativo
+- permitir entrar na fila
+- permitir agendar horario
+- acompanhar o atendimento
+- cancelar atendimento publico quando permitido
+
+### Backend
+
+Responsavel por:
+
+- autenticar usuarios admin e tenant
+- expor endpoints internos e publicos
+- criar e atualizar filas, agendamentos e linha unificada
+- enviar atualizacoes em tempo real via WebSocket
+- persistir tudo em PostgreSQL
+
+## Modelo de negocio implementado
+
+### Regra principal
+
+Cada profissional possui sua propria fila operacional.
+
+O sistema agora tambem possui uma representacao unificada chamada `service_line_entries`, que compartilha a mesma linha logica para:
+
+- atendimentos originados de fila
+- atendimentos originados de agendamento
+
+### O que isso significa na pratica
+
+- o cliente pode entrar por `fila` ou `agendamento`
+- internamente, ambos podem gerar uma entrada em `service_line_entries`
+- o acompanhamento do cliente pode ser feito pela linha unificada
+- cada profissional continua tendo sua propria fila/agenda
+
+## Fluxos do cliente
+
+## 1. Fluxo de entrada via QR code ou link
+
+### Objetivo
+
+Levar o cliente direto para a pagina do estabelecimento.
+
+### Caminho
+
+1. Cliente escaneia o QR code.
+2. O QR aponta para o link publico do estabelecimento.
+3. O cliente abre a pagina publica do negocio.
+4. O sistema pede o CPF para identificar atendimento ativo.
+
+### Implementado
+
+- QR code por estabelecimento
+- links publicos por slug do estabelecimento
+- fluxo publico web via `customer-web`
+
+### Observacoes
+
+- a estrategia recomendada e `1 QR code por estabelecimento`
+- a escolha do profissional acontece dentro do fluxo
+
+## 2. Fluxo de identificacao por CPF
+
+### Objetivo
+
+Reconhecer rapidamente se o cliente ja possui atendimento ativo.
+
+### Caminho
+
+1. Cliente informa o CPF.
+2. O sistema normaliza o CPF para apenas digitos.
+3. A API consulta sessao ativa no estabelecimento.
+4. Se existir atendimento ativo, o cliente vai direto para acompanhamento.
+5. Se nao existir, o cliente segue para escolher `Entrar na fila` ou `Agendar`.
+
+### Implementado
+
+- lookup publico por CPF
+- normalizacao de CPF
+- reaproveitamento do CPF nos fluxos seguintes
+- sessao local salva no navegador
+
+### Endpoint relacionado
+
+- `POST /api/public/session-lookup`
+
+## 3. Fluxo de boas-vindas do estabelecimento
+
+### Objetivo
+
+Dar ao cliente uma decisao simples apos a identificacao.
+
+### Caminho
+
+1. Cliente entra na pagina do estabelecimento.
+2. Se nao existir atendimento ativo, ve duas acoes principais:
+   - `Entrar na fila`
+   - `Agendar horario`
+3. O CPF segue no contexto da navegacao.
+
+### Implementado
+
+- pagina publica por estabelecimento
+- navegacao com preservacao do CPF
+- escolha simples entre fila e agendamento
+
+## 4. Fluxo de entrar na fila
+
+### Objetivo
+
+Permitir que o cliente entre na fila do profissional escolhido.
+
+### Caminho
+
+1. Cliente abre `/:slug/join`.
+2. Pode escolher servico, se houver.
+3. Pode escolher um profissional especifico.
+4. Pode tocar em `Profissional aleatorio`.
+5. Informa nome, telefone opcional e CPF.
+6. O sistema localiza a fila aberta correta.
+7. O sistema cria a `queue_entry`.
+8. O sistema tenta localizar a `service_line_entry` correspondente.
+9. O sistema salva a sessao local.
+10. O cliente pode acompanhar o atendimento.
+
+### Implementado
+
+- tela publica de fila
+- selecao de profissional
+- botao `Profissional aleatorio`
+- envio de CPF no ingresso da fila
+- criacao de `queue_entry`
+- sincronizacao com `service_line_entries`
+- tela de sucesso com atalho para acompanhamento
+
+### Regras atuais
+
+- se houver profissionais, a escolha de profissional e obrigatoria
+- a fila e encontrada de acordo com o profissional selecionado
+- se nao houver fila aberta para aquele contexto, o botao de entrada fica bloqueado
+
+## 5. Fluxo de agendamento
+
+### Objetivo
+
+Permitir agendar horario com um profissional especifico.
+
+### Caminho
+
+1. Cliente abre `/:slug/book`.
+2. Escolhe um servico.
+3. Escolhe um profissional ou `Profissional aleatorio`.
+4. Escolhe a data.
+5. Visualiza os horarios disponiveis do profissional.
+6. Informa nome, telefone opcional e CPF.
+7. O sistema cria o `appointment`.
+8. O sistema sincroniza com `service_line_entries`.
+9. O sistema salva a sessao local.
+10. O cliente pode acompanhar o agendamento.
+
+### Implementado
+
+- tela publica de agendamento
+- selecao de servico
+- selecao de profissional
+- botao `Profissional aleatorio`
+- listagem de slots
+- envio de CPF no agendamento
+- criacao de `appointment`
+- sincronizacao com `service_line_entries`
+- tela de sucesso com atalho para acompanhamento
+
+## 6. Fluxo de acompanhamento do cliente
+
+### Objetivo
+
+Manter o cliente informado sobre o status do atendimento.
+
+### Caminho
+
+1. O cliente entra em `/track`.
+2. O sistema tenta restaurar a sessao local.
+3. Se a sessao for da linha unificada, consulta `service_line`.
+4. Se a sessao for antiga, ainda suporta fallback para fila ou agendamento.
+5. O cliente ve status atual do atendimento.
+6. O cliente pode cancelar quando a regra permitir.
+
+### Implementado
+
+- acompanhamento por sessao local
+- suporte a `service-line`
+- compatibilidade com sessoes antigas de fila/agendamento
+- cancelamento publico de atendimento unificado
+
+### Endpoints relacionados
+
+- `GET /api/public/service-line/:id`
+- `PATCH /api/public/service-line/:id`
+
+## Fluxos operacionais do tenant
+
+## 7. Fluxo de login do tenant
+
+### Objetivo
+
+Permitir autenticacao local do tenant sem depender de Clerk no modo localhost.
+
+### Caminho
+
+1. Usuario acessa o tenant panel.
+2. Informa email e senha.
+3. A API retorna token JWT local.
+4. O token e salvo no `localStorage`.
+5. O painel passa a autenticar as chamadas seguintes.
+
+### Implementado
+
+- login local por JWT
+- persistencia da sessao
+- exigencia de troca de senha no primeiro acesso quando aplicavel
+
+## 8. Fluxo de dashboard
+
+### Objetivo
+
+Dar visao geral operacional do tenant.
+
+### Implementado
+
+- dashboard do tenant
+- integracao com estatisticas e visoes basicas do negocio
+
+## 9. Fluxo de gestao de estabelecimentos
+
+### Objetivo
+
+Permitir que o tenant administre suas unidades.
+
+### Caminho
+
+1. Usuario acessa `Businesses`.
+2. Cadastra ou edita estabelecimentos.
+3. Visualiza o link publico da unidade.
+4. Copia o link.
+5. Abre a pagina publica.
+6. Gera ou baixa o QR code da unidade.
+
+### Implementado
+
+- CRUD de estabelecimentos
+- exibicao de link publico
+- copia de link
+- abrir pagina publica
+- QR code por estabelecimento
+
+## 10. Fluxo de gestao de servicos
+
+### Objetivo
+
+Permitir configurar servicos ofertados pelo estabelecimento.
+
+### Implementado
+
+- CRUD de servicos
+- duracao e informacoes operacionais usadas pelo agendamento
+
+## 11. Fluxo de gestao de profissionais
+
+### Objetivo
+
+Permitir configurar profissionais que atendem no estabelecimento.
+
+### Implementado
+
+- CRUD de profissionais
+- vinculo com servicos e operacao de fila/agendamento
+
+## 12. Fluxo de operacao de fila
+
+### Objetivo
+
+Permitir que o tenant acompanhe e opere a fila do dia.
+
+### Caminho
+
+1. Usuario abre a pagina de fila.
+2. Visualiza filas e entradas.
+3. Chama o proximo cliente.
+4. Atualiza status da entrada quando necessario.
+5. O backend sincroniza a linha unificada.
+6. O sistema pode emitir eventos em tempo real.
+
+### Implementado
+
+- pagina de fila no tenant panel
+- listagem de filas e entradas
+- chamada do proximo da fila
+- atualizacao de status
+- sincronizacao com `service_line_entries`
+- integracao com WebSocket
+
+### Observacao importante
+
+O painel operacional ainda nao foi totalmente migrado para uma tela unica de linha unificada. Hoje existe compatibilidade e sincronizacao no backend, mas a UX principal ainda mistura conceitos legados de fila e agendamento.
+
+## 13. Fluxo de visualizacao de agendamentos
+
+### Objetivo
+
+Permitir acompanhar os agendamentos criados.
+
+### Implementado
+
+- pagina de agendamentos no tenant panel
+- listagem de agendamentos
+- atualizacao de status
+- sincronizacao com `service_line_entries`
+
+## 14. Fluxo de configuracoes
+
+### Implementado
+
+- pagina de configuracoes do tenant
+- alteracao de senha
+- gestao basica de conta do tenant
+
+## Fluxos do super admin
+
+## 15. Fluxo de login do super admin
+
+### Objetivo
+
+Permitir autenticacao do administrador global da plataforma.
+
+### Implementado
+
+- login local via `/api/auth/admin/login`
+- acesso ao painel em `/super-admin/`
+
+## 16. Fluxo de planos SaaS
+
+### Objetivo
+
+Permitir gerenciar os planos comerciais da plataforma.
+
+### Implementado
+
+- listagem de planos
+- criacao de planos
+- edicao de planos
+- suporte a limites operacionais como negocios e operadores
+
+## 17. Fluxo de tenants
+
+### Objetivo
+
+Permitir criar e acompanhar tenants da plataforma.
+
+### Implementado
+
+- listagem de tenants
+- criacao e edicao
+- associacao com plano
+- visualizacao global pelo super admin
+
+## Fluxos tecnicos
+
+## 18. Fluxo de autenticacao local sem Clerk
+
+### Objetivo
+
+Permitir ambiente local funcional mesmo sem chaves do Clerk.
+
+### Implementado
+
+- middleware do Clerk condicional
+- fallback para JWT local
+- error handler JSON na API
+
+### Resultado
+
+- localhost funciona sem dependencia obrigatoria de Clerk
+- endpoints protegidos continuam operando localmente
+
+## 19. Fluxo de banco e seed
+
+### Objetivo
+
+Subir rapidamente um ambiente pronto para demonstracao.
+
+### Caminho
+
+1. `docker compose` sobe o Postgres.
+2. `db-init` aplica `drizzle push`.
+3. `db-init` executa o seed.
+4. O seed cria planos, tenant demo, businesses, services, professionals, queues, queue entries, appointments e service line entries.
+
+### Implementado
+
+- stack Docker completa
+- init automatico de banco
+- seed com dados demo
+- CPFs demo
+- `service_line_entries` demo
+
+## 20. Fluxo de WebSocket
+
+### Objetivo
+
+Atualizar clientes e operacao em tempo real.
+
+### Implementado
+
+- inicializacao do WebSocket em `/api/ws`
+- broadcast de atualizacao de fila
+- broadcast de atualizacao de item de fila
+- suporte de eventos para `service-line`
+
+## Modelo de dados funcional
+
+## 21. Entidades principais
+
+### `plans`
+
+Planos comerciais da plataforma.
+
+### `tenants`
+
+Clientes SaaS da plataforma.
+
+### `businesses`
+
+Unidades/estabelecimentos do tenant.
+
+### `services`
+
+Servicos prestados por um estabelecimento.
+
+### `professionals`
+
+Profissionais que atendem no estabelecimento.
+
+### `queues`
+
+Filas operacionais abertas no dia.
+
+### `queue_entries`
+
+Entradas individuais da fila.
+
+### `appointments`
+
+Agendamentos criados pelos clientes.
+
+### `service_line_entries`
+
+Representacao unificada do atendimento por profissional.
+
+## 22. Status da linha unificada
+
+### Ja implementado
+
+- tabela `service_line_entries`
+- `clientCpf` em fila e agendamento
+- seed da linha unificada
+- criacao automatica da linha ao entrar na fila
+- criacao automatica da linha ao agendar
+- sincronizacao de status entre origem e linha unificada
+- lookup publico por CPF
+- acompanhamento publico baseado em `service-line`
+
+### Em transicao
+
+- UX do tenant ainda nao e totalmente centrada na linha unificada
+- ainda existe compatibilidade com fluxos antigos de fila/agendamento separados
+
+### Ainda nao implementado por completo
+
+- tela unica operacional por profissional usando somente a linha unificada
+- modelo de cadastro basico persistente de cliente separado de CPF solto
+- regras mais sofisticadas de prioridade entre fila e agendamento
+
+## Problemas ja resolvidos na evolucao local
+
+- subida completa via Docker
+- frontends servidos por Nginx
+- login local sem Clerk obrigatorio
+- JSON de erro na API
+- correcao de sincronizacao interna do Postgres no Docker
+- criacao automatica da linha unificada
+- links e QR codes por estabelecimento
+- escolha de profissional no fluxo publico
+
+## Pendencias recomendadas
+
+1. Criar entidade `customers` para cadastro basico do cliente.
+2. Reduzir ainda mais o numero de campos do fluxo publico.
+3. Migrar a operacao do tenant para uma tela unica de linha por profissional.
+4. Refinar a logica de prioridade entre agendamento e fila.
+5. Criar documentacao visual complementar com diagramas por fluxo.
+
+## Referencias tecnicas
+
+- diagramas visuais dos fluxos: [SYSTEM-FLOW-DIAGRAMS.md](./SYSTEM-FLOW-DIAGRAMS.md)
+- publicacao local: [LOCALHOST.md](./LOCALHOST.md)
+- plano da linha unificada: [UNIFIED-SERVICE-LINE-PLAN.md](./UNIFIED-SERVICE-LINE-PLAN.md)
+- documentacao geral do projeto: [README.md](./README.md)
 
 
 
